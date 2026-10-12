@@ -35,7 +35,7 @@ The tool uses Instagram's private API endpoints with proper session authenticati
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/hendarSu/igscraper.git
+   git clone https://github.com/newofficialsyamanah-art/igscrapersyamanah.git
    cd Instagram-Followers-Scraper_Suite
    ```
 
