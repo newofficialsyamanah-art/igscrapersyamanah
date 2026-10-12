@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Scraper Suite - Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        igPink: '#E1306C',
+                        igPurple: '#C13584',
+                        igOrange: '#F77737',
+                        igYellow: '#FCAF45',
+                        igBlue: '#405DE6'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .ig-gradient {
+            background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+        }
+        .ig-gradient-text {
+            background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .log-terminal {
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans">
+
+    <!-- Navbar -->
+    <header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl ig-gradient flex items-center justify-center shadow-lg shadow-pink-500/20">
+                    <i data-lucide="instagram" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent">
+                        IG Scraper Suite
+                    </span>
+                    <span class="ml-2 text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">v2.0 Web</span>
+                </div>
+            </div>
+
+            <!-- Active Session Indicator -->
+            <div class="flex items-center space-x-3">
+                <div id="session-badge" class="flex items-center space-x-2 bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-lg text-sm">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" id="session-dot"></span>
+                    <span class="text-slate-300 font-medium" id="session-username">Memeriksa sesi...</span>
+                </div>
+                <button onclick="openSessionModal()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm text-slate-200 flex items-center space-x-1.5 transition">
+                    <i data-lucide="key" class="w-4 h-4"></i>
+                    <span>Kelola Sesi</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+        
+        <!-- Top Cards: Scraper Control & Realtime Status -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Scraper Config (5 cols) -->
+            <div class="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-white flex items-center space-x-2">
+                        <i data-lucide="users" class="w-5 h-5 text-pink-500" id="card-mode-icon"></i>
+                        <span id="card-mode-title">Follower Scraper</span>
+                    </h2>
+                    <span class="text-xs text-slate-400" id="card-mode-desc">Ambil data pengikut</span>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Mode Selector: Followers vs Following -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">Tipe Scraping</label>
+                        <div class="grid grid-cols-2 gap-2 p-1 bg-slate-900 border border-slate-800 rounded-xl">
+                            <button type="button" id="tab-followers" onclick="switchScrapeMode('followers')"
+                                class="py-2 px-3 text-xs font-semibold rounded-lg transition flex items-center justify-center space-x-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md">
+                                <i data-lucide="users" class="w-4 h-4"></i>
+                                <span>Followers</span>
+                            </button>
+                            <button type="button" id="tab-following" onclick="switchScrapeMode('following')"
+                                class="py-2 px-3 text-xs font-medium rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition flex items-center justify-center space-x-2">
+                                <i data-lucide="user-plus" class="w-4 h-4"></i>
+                                <span>Following</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Target Username -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">Username Target Instagram</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 font-bold">@</span>
+                            <input type="text" id="target-username" placeholder="contoh: ladygaga / kemdikbud.ri" 
+                                class="w-full pl-9 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm">
+                        </div>
+                        <p class="text-[11px] text-slate-500 mt-1">Akun publik langsung bisa di-scrape. Akun private harus sudah di-follow.</p>
+                    </div>
+
+                    <!-- Scrape Limit -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">Jumlah <span id="limit-type-label">Follower</span> Diambil</label>
+                        <div class="grid grid-cols-4 gap-2 mb-2">
+                            <button type="button" onclick="setLimit(50)" class="limit-btn py-1.5 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 hover:border-pink-500 hover:text-pink-400 transition">50</button>
+                            <button type="button" onclick="setLimit(100)" class="limit-btn py-1.5 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 hover:border-pink-500 hover:text-pink-400 transition">100</button>
+                            <button type="button" onclick="setLimit(500)" class="limit-btn py-1.5 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 hover:border-pink-500 hover:text-pink-400 transition">500</button>
+                            <button type="button" onclick="setLimit(0)" class="limit-btn py-1.5 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 hover:border-pink-500 hover:text-pink-400 transition">Semua</button>
+                        </div>
+                        <input type="number" id="scrape-limit" value="100" min="0" placeholder="0 untuk semua"
+                            class="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent">
+                        <p class="text-[11px] text-slate-500 mt-1">Ketik 0 jika ingin mengambil seluruh <span id="limit-hint-label">followers</span> hingga habis.</p>
+                    </div>
+
+                    <!-- Speed Mode Selector -->
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="block text-xs font-medium text-slate-400">Kecepatan Scraping</label>
+                            <span id="speed-desc" class="text-[11px] font-medium text-amber-400">⚡ Cepat (1.0 - 1.5s)</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button type="button" id="btn-speed-fast" onclick="setSpeed('fast')"
+                                class="py-2 px-2 text-xs font-semibold rounded-lg bg-pink-500/20 text-pink-400 border border-pink-500/40 transition flex items-center justify-center space-x-1">
+                                <span>⚡ Cepat</span>
+                            </button>
+                            <button type="button" id="btn-speed-normal" onclick="setSpeed('normal')"
+                                class="py-2 px-2 text-xs font-medium rounded-lg bg-slate-900 text-slate-400 border border-slate-700 hover:text-white transition flex items-center justify-center space-x-1">
+                                <span>⚖️ Normal</span>
+                            </button>
+                            <button type="button" id="btn-speed-safe" onclick="setSpeed('safe')"
+                                class="py-2 px-2 text-xs font-medium rounded-lg bg-slate-900 text-slate-400 border border-slate-700 hover:text-white transition flex items-center justify-center space-x-1">
+                                <span>🛡️ Aman</span>
+                            </button>
+                        </div>
+                        <p class="text-[11px] text-slate-500 mt-1">Mode <strong>Cepat</strong> memproses batch berikutnya tanpa jeda lama agar tidak terasa stuck.</p>
+                    </div>
+
+                    <!-- Email Extraction Toggle -->
+                    <div class="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+                        <label class="flex items-center justify-between cursor-pointer select-none">
+                            <div class="flex items-center space-x-2.5">
+                                <div class="w-7 h-7 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400">
+                                    <i data-lucide="mail" class="w-4 h-4"></i>
+                                </div>
+                                <div>
+                                    <span class="text-xs font-semibold text-slate-200">Ekstrak Email Publik</span>
+                                    <p class="text-[11px] text-slate-400">Cek bio profil publik untuk menemukan alamat email</p>
+                                </div>
+                            </div>
+                            <input type="checkbox" id="check-extract-email" checked
+                                class="w-4 h-4 text-pink-500 bg-slate-800 border-slate-700 rounded focus:ring-pink-500 focus:ring-offset-slate-900 cursor-pointer">
+                        </label>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="pt-2 flex space-x-3">
+                        <button id="btn-start" onclick="startScrape()" 
+                            class="flex-1 py-3 px-4 rounded-xl font-medium text-white ig-gradient shadow-lg shadow-pink-500/25 hover:opacity-95 active:scale-[0.98] transition flex items-center justify-center space-x-2">
+                            <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+                            <span>Mulai Scraping</span>
+                        </button>
+                        <button id="btn-stop" onclick="stopScrape()" disabled
+                            class="py-3 px-4 rounded-xl font-medium text-slate-400 bg-slate-900 border border-slate-800 hover:border-red-500/50 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center space-x-1.5">
+                            <i data-lucide="square" class="w-4 h-4"></i>
+                            <span>Stop</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status & Live Terminal (7 cols) -->
+            <div class="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between space-y-4">
+                <div>
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-white flex items-center space-x-2">
+                            <i data-lucide="activity" class="w-5 h-5 text-indigo-400"></i>
+                            <span>Status & Progres Realtime</span>
+                        </h2>
+                        <span id="status-pill" class="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center space-x-1.5">
+                            <span class="w-2 h-2 rounded-full bg-slate-500" id="status-light"></span>
+                            <span id="status-text">Menunggu instruksi...</span>
+                        </span>
+                    </div>
+
+                    <!-- Progress bar -->
+                    <div class="space-y-2 mb-4">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Tercapai: <strong id="count-scraped" class="text-white text-sm">0</strong> <span id="count-total">/ 0</span></span>
+                            <span id="progress-percent" class="font-semibold text-pink-400">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-900 h-3 rounded-full overflow-hidden border border-slate-800">
+                            <div id="progress-bar" class="h-full ig-gradient transition-all duration-300 w-0"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Log Console -->
+                <div class="space-y-1.5">
+                    <div class="flex items-center justify-between text-xs text-slate-400">
+                        <span class="flex items-center space-x-1 font-mono">
+                            <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+                            <span>Activity Logs</span>
+                        </span>
+                        <button onclick="clearLogs()" class="text-[11px] text-slate-500 hover:text-slate-300 transition">Bersihkan</button>
+                    </div>
+                    <div id="terminal-logs" class="bg-black/80 rounded-xl p-3.5 h-44 overflow-y-auto log-terminal text-xs text-emerald-400 border border-slate-800/80 space-y-1">
+                        <div class="text-slate-500">[System] Siap melakukan scraping. Masukkan target username di sebelah kiri.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scraped Results Table -->
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+            <div class="p-6 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h3 class="text-lg font-semibold text-white flex items-center space-x-2">
+                        <i data-lucide="database" class="w-5 h-5 text-purple-400"></i>
+                        <span>Hasil Data <span id="table-type-label">Follower</span></span>
+                        <span id="result-badge" class="text-xs px-2.5 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 font-normal">0 Akun</span>
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-1">Data <span id="table-sub-label">pengikut</span> yang berhasil dikumpulkan secara instan</p>
+                </div>
+
+                <!-- Export & Filter controls -->
+                <div class="flex items-center flex-wrap gap-2">
+                    <div class="relative">
+                        <input type="text" id="table-search" placeholder="Cari di hasil..." oninput="filterTable()"
+                            class="w-44 sm:w-56 pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-pink-500">
+                        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5"></i>
+                    </div>
+
+                    <button onclick="exportCSV()" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
+                        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>
+                        <span>Download CSV</span>
+                    </button>
+                    <button onclick="exportJSON()" class="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
+                        <i data-lucide="file-json" class="w-3.5 h-3.5"></i>
+                        <span>Download JSON</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="overflow-x-auto max-h-[500px] overflow-y-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-900/80 sticky top-0 text-xs uppercase text-slate-400 tracking-wider border-b border-slate-800">
+                        <tr>
+                            <th scope="col" class="px-5 py-3.5">No</th>
+                            <th scope="col" class="px-5 py-3.5">User</th>
+                            <th scope="col" class="px-5 py-3.5">Nama Lengkap</th>
+                            <th scope="col" class="px-5 py-3.5">Email Publik</th>
+                            <th scope="col" class="px-5 py-3.5">Status Akun</th>
+                            <th scope="col" class="px-5 py-3.5">User ID (PK)</th>
+                            <th scope="col" class="px-5 py-3.5 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body" class="divide-y divide-slate-800/60 font-sans">
+                        <tr>
+                            <td colspan="7" class="px-5 py-12 text-center text-slate-500">
+                                <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
+                                Belum ada data pengikut. Mulai proses scraping untuk menampilkan hasil di sini.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Session Management Modal -->
+    <div id="session-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-base font-semibold text-white flex items-center space-x-2">
+                    <i data-lucide="key-round" class="w-5 h-5 text-amber-400"></i>
+                    <span>Manajemen Akun Sesi Instagram</span>
+                </h3>
+                <button onclick="closeSessionModal()" class="text-slate-400 hover:text-white transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- List Existing Sessions -->
+            <div class="space-y-2">
+                <label class="block text-xs font-medium text-slate-400">Daftar Sesi Tersimpan</label>
+                <div id="modal-session-list" class="space-y-2 max-h-40 overflow-y-auto">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+
+            <!-- Add New Session Form -->
+            <div class="space-y-3 pt-2 border-t border-slate-800">
+                <h4 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Tambah Sesi Baru</h4>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Username Akun Anda</label>
+                    <input type="text" id="new-session-username" placeholder="Username Anda"
+                        class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Session ID (Cookie sessionid)</label>
+                    <textarea id="new-session-id" rows="2" placeholder="Contoh: 9875800022:3BBWObjoc6Lf2h:..."
+                        class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-pink-500"></textarea>
+                </div>
+                <div id="session-alert" class="hidden text-xs p-2.5 rounded-lg"></div>
+
+                <button id="btn-save-session" onclick="addSession()" class="w-full py-2.5 rounded-xl font-medium text-sm text-white ig-gradient shadow-md shadow-pink-500/20 hover:opacity-95 transition flex items-center justify-center space-x-2">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    <span>Verifikasi & Simpan Sesi</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript logic -->
+    <script>
+        let allScrapedUsers = [];
+        let pollingInterval = null;
+        let currentTarget = '';
+        let currentScrapeMode = 'followers';
+        let currentSpeed = 'fast';
+        let lastRenderedCount = -1;
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Helper: Set Scraping Speed
+        function setSpeed(sp) {
+            currentSpeed = sp;
+            const btnFast = document.getElementById('btn-speed-fast');
+            const btnNormal = document.getElementById('btn-speed-normal');
+            const btnSafe = document.getElementById('btn-speed-safe');
+            const speedDesc = document.getElementById('speed-desc');
+
+            const activeClass = 'py-2 px-2 text-xs font-semibold rounded-lg bg-pink-500/20 text-pink-400 border border-pink-500/40 transition flex items-center justify-center space-x-1';
+            const inactiveClass = 'py-2 px-2 text-xs font-medium rounded-lg bg-slate-900 text-slate-400 border border-slate-700 hover:text-white transition flex items-center justify-center space-x-1';
+
+            btnFast.className = sp === 'fast' ? activeClass : inactiveClass;
+            btnNormal.className = sp === 'normal' ? activeClass : inactiveClass;
+            btnSafe.className = sp === 'safe' ? activeClass : inactiveClass;
+
+            if (sp === 'fast') speedDesc.textContent = '⚡ Cepat (1.0 - 1.5s)';
+            else if (sp === 'normal') speedDesc.textContent = '⚖️ Normal (2.0 - 3.0s)';
+            else speedDesc.textContent = '🛡️ Aman (4.0 - 5.0s)';
+        }
+
+        // Helper: Switch Scrape Mode (followers / following)
+        function switchScrapeMode(mode) {
+            currentScrapeMode = mode;
+            lastRenderedCount = -1;
+            const tabFollowers = document.getElementById('tab-followers');
+            const tabFollowing = document.getElementById('tab-following');
+            const cardIcon = document.getElementById('card-mode-icon');
+            const cardTitle = document.getElementById('card-mode-title');
+            const cardDesc = document.getElementById('card-mode-desc');
+            const limitLabel = document.getElementById('limit-type-label');
+            const limitHint = document.getElementById('limit-hint-label');
+            const tableLabel = document.getElementById('table-type-label');
+            const tableSubLabel = document.getElementById('table-sub-label');
+
+            if (mode === 'followers') {
+                tabFollowers.className = 'py-2 px-3 text-xs font-semibold rounded-lg transition flex items-center justify-center space-x-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md';
+                tabFollowing.className = 'py-2 px-3 text-xs font-medium rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition flex items-center justify-center space-x-2';
+                cardIcon.setAttribute('data-lucide', 'users');
+                cardIcon.className = 'w-5 h-5 text-pink-500';
+                cardTitle.textContent = 'Follower Scraper';
+                cardDesc.textContent = 'Ambil data pengikut';
+                limitLabel.textContent = 'Follower';
+                limitHint.textContent = 'followers';
+                tableLabel.textContent = 'Follower';
+                tableSubLabel.textContent = 'pengikut';
+            } else {
+                tabFollowing.className = 'py-2 px-3 text-xs font-semibold rounded-lg transition flex items-center justify-center space-x-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-md';
+                tabFollowers.className = 'py-2 px-3 text-xs font-medium rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition flex items-center justify-center space-x-2';
+                cardIcon.setAttribute('data-lucide', 'user-plus');
+                cardIcon.className = 'w-5 h-5 text-indigo-400';
+                cardTitle.textContent = 'Following Scraper';
+                cardDesc.textContent = 'Ambil akun yang diikuti';
+                limitLabel.textContent = 'Following';
+                limitHint.textContent = 'following';
+                tableLabel.textContent = 'Following';
+                tableSubLabel.textContent = 'akun yang diikuti';
+            }
+            lucide.createIcons();
+            if (allScrapedUsers.length === 0) {
+                renderTable([]);
+            }
+        }
+
+        // Helper: Set Quick Limit
+        function setLimit(val) {
+            document.getElementById('scrape-limit').value = val;
+        }
+
+        // Fetch Session Status on Load
+        async function fetchSessions() {
+            try {
+                const res = await fetch('/api/sessions');
+                const data = await res.json();
+                const dot = document.getElementById('session-dot');
+                const userLabel = document.getElementById('session-username');
+                const modalList = document.getElementById('modal-session-list');
+
+                modalList.innerHTML = '';
+
+                if (data.sessions && data.sessions.length > 0) {
+                    const active = data.sessions[0];
+                    dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                    userLabel.textContent = `@${active.username}`;
+
+                    data.sessions.forEach((s, idx) => {
+                        const item = document.createElement('div');
+                        item.className = 'flex items-center justify-between p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs';
+                        item.innerHTML = `
+                            <div class="flex items-center space-x-2 truncate">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                <span class="font-semibold text-white">@${s.username}</span>
+                                <span class="text-slate-500 text-[11px] truncate font-mono">${s.session_id.substring(0, 15)}...</span>
+                            </div>
+                            <button onclick="deleteSession(${idx})" class="text-red-400 hover:text-red-300 p-1">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                        `;
+                        modalList.appendChild(item);
+                    });
+                } else {
+                    dot.className = 'w-2.5 h-2.5 rounded-full bg-red-400';
+                    userLabel.textContent = 'Belum ada sesi';
+                    modalList.innerHTML = '<div class="text-xs text-slate-500 text-center py-2">Tidak ada sesi tersimpan.</div>';
+                }
+                lucide.createIcons();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Modal Handlers
+        function openSessionModal() {
+            document.getElementById('session-modal').classList.remove('hidden');
+            fetchSessions();
+        }
+        function closeSessionModal() {
+            document.getElementById('session-modal').classList.add('hidden');
+        }
+
+        // Add Session
+        async function addSession() {
+            const username = document.getElementById('new-session-username').value.trim();
+            const session_id = document.getElementById('new-session-id').value.trim();
+            const alertBox = document.getElementById('session-alert');
+            const btn = document.getElementById('btn-save-session');
+
+            if (!session_id) {
+                alertBox.className = 'text-xs p-2.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20';
+                alertBox.textContent = 'Session ID wajib diisi!';
+                alertBox.classList.remove('hidden');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Memverifikasi sesi...`;
+            alertBox.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/sessions/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, session_id })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    alertBox.className = 'text-xs p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                    alertBox.textContent = result.message || 'Sesi berhasil diverifikasi dan disimpan!';
+                    alertBox.classList.remove('hidden');
+                    document.getElementById('new-session-username').value = '';
+                    document.getElementById('new-session-id').value = '';
+                    setTimeout(() => {
+                        closeSessionModal();
+                        fetchSessions();
+                    }, 1200);
+                } else {
+                    alertBox.className = 'text-xs p-2.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20';
+                    alertBox.textContent = result.message || 'Gagal memverifikasi sesi.';
+                    alertBox.classList.remove('hidden');
+                }
+            } catch (err) {
+                alertBox.className = 'text-xs p-2.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20';
+                alertBox.textContent = 'Error koneksi server: ' + err.message;
+                alertBox.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i><span>Verifikasi & Simpan Sesi</span>`;
+                lucide.createIcons();
+            }
+        }
+
+        // Delete Session
+        async function deleteSession(idx) {
+            if (!confirm('Yakin ingin menghapus sesi ini?')) return;
+            try {
+                await fetch('/api/sessions/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index: idx })
+                });
+                fetchSessions();
+            } catch (err) {
+                alert('Gagal menghapus sesi: ' + err.message);
+            }
+        }
+
+        // Start Scraping
+        async function startScrape() {
+            let target = document.getElementById('target-username').value.trim();
+            target = target.replace(/^@/, ''); // Remove leading @ if any
+            const limit = parseInt(document.getElementById('scrape-limit').value) || 0;
+
+            if (!target) {
+                alert('Silakan masukkan username target!');
+                return;
+            }
+
+            currentTarget = target;
+            allScrapedUsers = [];
+            lastRenderedCount = 0;
+            renderTable([]);
+
+            const extract_email = document.getElementById('check-extract-email') ? document.getElementById('check-extract-email').checked : true;
+
+            document.getElementById('btn-start').disabled = true;
+            document.getElementById('btn-stop').disabled = false;
+
+            try {
+                const res = await fetch('/api/scrape/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target, limit, scrape_type: currentScrapeMode, speed: currentSpeed, extract_email })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    alert('Gagal memulai: ' + (data.message || 'Error tidak diketahui'));
+                    document.getElementById('btn-start').disabled = false;
+                    document.getElementById('btn-stop').disabled = true;
+                    return;
+                }
+
+                // Start polling
+                if (pollingInterval) clearInterval(pollingInterval);
+                pollingInterval = setInterval(pollStatus, 1000);
+            } catch (err) {
+                alert('Error server: ' + err.message);
+                document.getElementById('btn-start').disabled = false;
+                document.getElementById('btn-stop').disabled = true;
+            }
+        }
+
+        // Stop Scraping
+        async function stopScrape() {
+            try {
+                await fetch('/api/scrape/stop', { method: 'POST' });
+                appendLog('[User] Perintah stop dikirim. Menyelesaikan batch saat ini...');
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Poll Scraping Status
+        async function pollStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const state = await res.json();
+
+                // Sync active mode if server is currently scraping a different mode
+                if (state.is_scraping && state.scrape_type && state.scrape_type !== currentScrapeMode) {
+                    switchScrapeMode(state.scrape_type);
+                }
+
+                // Update text & counts
+                const statusPill = document.getElementById('status-pill');
+                const statusLight = document.getElementById('status-light');
+                const statusText = document.getElementById('status-text');
+                const countScraped = document.getElementById('count-scraped');
+                const countTotal = document.getElementById('count-total');
+                const progressBar = document.getElementById('progress-bar');
+                const progressPercent = document.getElementById('progress-percent');
+
+                countScraped.textContent = state.current_count;
+                countTotal.textContent = state.total_target > 0 ? `/ ${state.total_target}` : (state.is_scraping ? '/ Semua' : '');
+                progressBar.style.width = `${state.progress_pct}%`;
+                progressPercent.textContent = `${state.progress_pct}%`;
+
+                if (state.is_scraping) {
+                    statusLight.className = 'w-2 h-2 rounded-full bg-pink-400 animate-ping';
+                    statusText.textContent = state.status_text || 'Sedang mengambil data...';
+                    document.getElementById('btn-start').disabled = true;
+                    document.getElementById('btn-stop').disabled = false;
+                } else {
+                    statusLight.className = 'w-2 h-2 rounded-full bg-slate-500';
+                    statusText.textContent = state.status_text || 'Selesai / Idle';
+                    document.getElementById('btn-start').disabled = false;
+                    document.getElementById('btn-stop').disabled = true;
+                    if (pollingInterval) {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                    }
+                }
+
+                // Update Logs
+                if (state.logs && state.logs.length > 0) {
+                    const logBox = document.getElementById('terminal-logs');
+                    logBox.innerHTML = '';
+                    state.logs.forEach(msg => {
+                        const row = document.createElement('div');
+                        row.textContent = msg;
+                        if (msg.includes('Error') || msg.includes('[!]')) {
+                            row.className = 'text-red-400';
+                        } else if (msg.includes('[+]') || msg.includes('Saved') || msg.includes('selesai') || msg.includes('SELESAI')) {
+                            row.className = 'text-emerald-400 font-semibold';
+                        } else {
+                            row.className = 'text-slate-300';
+                        }
+                        logBox.appendChild(row);
+                    });
+                    logBox.scrollTop = logBox.scrollHeight;
+                }
+
+                // Update Results Table only when data changed to avoid UI freeze
+                if (state.results && state.results.length > 0) {
+                    if (state.results.length !== lastRenderedCount) {
+                        lastRenderedCount = state.results.length;
+                        allScrapedUsers = state.results;
+                        renderTable(allScrapedUsers);
+                    }
+                } else if (lastRenderedCount !== 0 && (!state.results || state.results.length === 0)) {
+                    lastRenderedCount = 0;
+                    allScrapedUsers = [];
+                    renderTable([]);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Render Table Rows
+        function renderTable(users) {
+            const tbody = document.getElementById('table-body');
+            const badge = document.getElementById('result-badge');
+            const emailFoundCount = users.filter(u => u.email).length;
+            badge.innerHTML = `${users.length} Akun` + (emailFoundCount > 0 ? ` <span class="ml-1 text-emerald-400 font-semibold">• 📧 ${emailFoundCount} Email</span>` : '');
+
+            if (users.length === 0) {
+                const emptyMsg = currentScrapeMode === 'following'
+                    ? 'Belum ada data following. Mulai proses scraping untuk menampilkan hasil di sini.'
+                    : 'Belum ada data pengikut. Mulai proses scraping untuk menampilkan hasil di sini.';
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-5 py-12 text-center text-slate-500">
+                            <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
+                            ${emptyMsg}
+                        </td>
+                    </tr>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            tbody.innerHTML = '';
+            users.forEach((u, i) => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-900/60 transition';
+
+                const avatar = u.profile_pic_url 
+                    ? `<img src="${u.profile_pic_url}" referrerpolicy="no-referrer" class="w-9 h-9 rounded-full object-cover border border-slate-700 bg-slate-800" onerror="this.src='https://ui-avatars.com/api/?name=${u.username}&background=random'">`
+                    : `<div class="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs uppercase text-slate-400">${u.username.substring(0, 2)}</div>`;
+
+                const verifiedBadge = u.is_verified 
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">Verified</span>` 
+                    : '';
+
+                const privateBadge = u.is_private 
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30">Private</span>` 
+                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Public</span>`;
+
+                const emailHtml = u.email 
+                    ? `<a href="mailto:${u.email}" class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition group" title="Kirim email ke ${u.email}">
+                        <i data-lucide="mail" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span class="underline decoration-dotted underline-offset-2">${u.email}</span>
+                       </a>`
+                    : `<span class="text-slate-600 text-xs font-mono">-</span>`;
+
+                tr.innerHTML = `
+                    <td class="px-5 py-3.5 text-xs text-slate-500 font-mono">${i + 1}</td>
+                    <td class="px-5 py-3.5">
+                        <div class="flex items-center space-x-3">
+                            ${avatar}
+                            <div>
+                                <a href="https://www.instagram.com/${u.username}/" target="_blank" class="font-semibold text-white hover:text-pink-400 flex items-center space-x-1 transition">
+                                    <span>@${u.username}</span>
+                                    <i data-lucide="external-link" class="w-3 h-3 text-slate-500"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-5 py-3.5 text-slate-300 font-medium">${u.full_name || '<span class="text-slate-600">-</span>'}</td>
+                    <td class="px-5 py-3.5">${emailHtml}</td>
+                    <td class="px-5 py-3.5 space-x-1">${privateBadge} ${verifiedBadge}</td>
+                    <td class="px-5 py-3.5 font-mono text-xs text-slate-400">${u.id || u.pk}</td>
+                    <td class="px-5 py-3.5 text-right">
+                        <a href="https://www.instagram.com/${u.username}/" target="_blank" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md text-xs transition inline-flex items-center space-x-1">
+                            <span>Buka</span>
+                            <i data-lucide="chevron-right" class="w-3 h-3"></i>
+                        </a>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+            lucide.createIcons();
+        }
+
+        // Table Filtering
+        function filterTable() {
+            const query = document.getElementById('table-search').value.toLowerCase();
+            if (!query) {
+                renderTable(allScrapedUsers);
+                return;
+            }
+            const filtered = allScrapedUsers.filter(u => 
+                (u.username && u.username.toLowerCase().includes(query)) ||
+                (u.full_name && u.full_name.toLowerCase().includes(query)) ||
+                (u.email && u.email.toLowerCase().includes(query)) ||
+                (u.id && String(u.id).includes(query))
+            );
+            renderTable(filtered);
+        }
+
+        // Export CSV
+        function exportCSV() {
+            const target = currentTarget || (allScrapedUsers.length > 0 ? 'scraped' : '');
+            if (!target) {
+                alert('Belum ada data untuk didownload!');
+                return;
+            }
+            window.location.href = `/api/export/csv?username=${encodeURIComponent(target)}&scrape_type=${encodeURIComponent(currentScrapeMode)}`;
+        }
+
+        // Export JSON
+        function exportJSON() {
+            const target = currentTarget || (allScrapedUsers.length > 0 ? 'scraped' : '');
+            if (!target) {
+                alert('Belum ada data untuk didownload!');
+                return;
+            }
+            window.location.href = `/api/export/json?username=${encodeURIComponent(target)}&scrape_type=${encodeURIComponent(currentScrapeMode)}`;
+        }
+
+        function clearLogs() {
+            document.getElementById('terminal-logs').innerHTML = '<div class="text-slate-500">[System] Log dibersihkan.</div>';
+        }
+
+        function appendLog(msg) {
+            const logBox = document.getElementById('terminal-logs');
+            const row = document.createElement('div');
+            row.textContent = msg;
+            row.className = 'text-slate-400';
+            logBox.appendChild(row);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        // Initialize on page load
+        window.onload = () => {
+            fetchSessions();
+            pollStatus();
+        };
+    </script>
+</body>
+</html>
