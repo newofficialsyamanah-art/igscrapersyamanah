@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 import requests
 from flask import Flask, jsonify, render_template, request, Response, send_file
-from modules import Get_Followers, Get_Following, Sessions_Manager
+from modules import Get_Followers, Get_Following, Sessions_Manager, db_manager, excel_exporter
 
 app = Flask(__name__)
 
@@ -36,7 +36,9 @@ scraping_state = {
     "logs": ["[System] Web UI siap digunakan."],
     "error": None,
     "results": [],
-    "emails_found_count": 0
+    "emails_found_count": 0,
+    "db_saved_count": 0,
+    "db_type": db_manager.DB_TYPE
 }
 
 email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b')
@@ -49,13 +51,20 @@ def add_log(message):
         if len(scraping_state["logs"]) > 200:
             scraping_state["logs"] = scraping_state["logs"][-200:]
 
-def extract_email_from_profile(username, http_session=None):
+def extract_profile_details(username, http_session=None):
     """
-    Mengambil email publik dari profil Instagram melalui Googlebot pre-rendered page.
-    Mengekstrak dari decoded biography atau tag mailto / pattern di HTML.
+    Mengambil email publik, jumlah followers, following, dan bio
+    melalui Googlebot pre-rendered page.
     """
+    details = {
+        "email": None,
+        "follower_count_str": "-",
+        "following_count_str": "-",
+        "follower_count": 0,
+        "following_count": 0,
+    }
     if not username:
-        return None
+        return details
     try:
         url = f"https://www.instagram.com/{username}/"
         headers = {
@@ -63,9 +72,21 @@ def extract_email_from_profile(username, http_session=None):
             'Accept-Language': 'en-US,en;q=0.9'
         }
         client = http_session if http_session is not None else requests
-        resp = client.get(url, headers=headers, timeout=4)
+        resp = client.get(url, headers=headers, timeout=5)
         if resp.status_code == 200:
             html = resp.text
+
+            # 1. Parse Followers & Following count dari meta og:description
+            m_counts = re.search(r'([\d.,KMkm]+)\s+Followers,\s*([\d.,KMkm]+)\s+Following', html, re.IGNORECASE)
+            if m_counts:
+                f_str = m_counts.group(1)
+                g_str = m_counts.group(2)
+                details["follower_count_str"] = f_str
+                details["following_count_str"] = g_str
+                details["follower_count"] = db_manager.parse_count_to_int(f_str)
+                details["following_count"] = db_manager.parse_count_to_int(g_str)
+
+            # 2. Extract Biography
             bio = ""
             m = re.search(r'\"xig_user_by_igid_v2\":(\{.*?\})\s*,\s*\"xig_logged_out', html)
             if m:
@@ -81,52 +102,88 @@ def extract_email_from_profile(username, http_session=None):
                         bio = json.loads('"' + m2.group(1) + '"')
                     except Exception:
                         bio = m2.group(1)
-            
-            # 1. Search in decoded biography
+
+            # 3. Search Email in decoded biography
             if bio:
                 found = email_pattern.findall(bio)
                 clean = [e for e in found if not e.endswith(('.png', '.jpg', '.jpeg', '.js', '.css', '.svg', '.webp'))]
                 if clean:
-                    return clean[0].lower()
-                # Obfuscated [at] or (at)
-                obf = re.findall(r'\b[A-Za-z0-9._%+-]+\s*(?:\[at\]|\(at\))\s*[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', bio, re.IGNORECASE)
-                if obf:
-                    return re.sub(r'\s*(?:\[at\]|\(at\))\s*', '@', obf[0]).lower()
+                    details["email"] = clean[0].lower()
+                else:
+                    obf = re.findall(r'\b[A-Za-z0-9._%+-]+\s*(?:\[at\]|\(at\))\s*[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', bio, re.IGNORECASE)
+                    if obf:
+                        details["email"] = re.sub(r'\s*(?:\[at\]|\(at\))\s*', '@', obf[0]).lower()
 
-            # 2. Fallback check mailto in HTML
-            for mailto_match in re.finditer(r'mailto:([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})', html, re.IGNORECASE):
-                return mailto_match.group(1).lower()
+            # 4. Fallback search mailto in HTML
+            if not details["email"]:
+                for mailto_match in re.finditer(r'mailto:([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})', html, re.IGNORECASE):
+                    details["email"] = mailto_match.group(1).lower()
+                    break
 
     except Exception:
         pass
-    return None
+    return details
 
-def process_batch_emails(user_batch, http_session):
-    """Memeriksa email untuk batch akun secara concurrent."""
-    public_users = [u for u in user_batch if not u.get("is_private") and "email" not in u]
-    for u in user_batch:
-        if u.get("is_private") and "email" not in u:
-            u["email"] = None
 
-    if not public_users:
+def process_batch_details(user_batch, http_session, target_username, scrape_type="followers", extract_email=True):
+    """
+    Memeriksa details (followers, following, email, kategori) secara concurrent
+    dan langsung menyimpan ke database server dengan deduplikasi otomatis.
+    """
+    if not user_batch:
         return
 
+    for u in user_batch:
+        is_verified = bool(u.get("is_verified"))
+        is_private = bool(u.get("is_private"))
+        if is_verified:
+            u["category_type"] = "Terverifikasi"
+        elif is_private:
+            u["category_type"] = "Akun Privat (Follower Biasa)"
+        else:
+            u["category_type"] = "Follower Biasa"
+
+        u["target_source"] = target_username
+        u["scrape_type"] = scrape_type
+        if "follower_count_str" not in u:
+            u["follower_count_str"] = "-"
+        if "following_count_str" not in u:
+            u["following_count_str"] = "-"
+
+    # Concurrently fetch detailed follower count and email
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_map = {
-            executor.submit(extract_email_from_profile, u.get("username"), http_session): u
-            for u in public_users
+            executor.submit(extract_profile_details, u.get("username"), http_session): u
+            for u in user_batch
         }
         for future in concurrent.futures.as_completed(future_map):
             u = future_map[future]
             try:
-                em = future.result()
-                u["email"] = em
-                if em:
+                res = future.result()
+                u["follower_count_str"] = res["follower_count_str"]
+                u["following_count_str"] = res["following_count_str"]
+                u["follower_count"] = res["follower_count"]
+                u["following_count"] = res["following_count"]
+                if extract_email and res.get("email"):
+                    u["email"] = res["email"]
                     with state_lock:
                         scraping_state["emails_found_count"] += 1
-                    add_log(f"[📧] Email publik ditemukan: @{u.get('username')} -> {em}")
+                    add_log(f"[📧] Email publik ditemukan: @{u.get('username')} -> {res['email']}")
+                else:
+                    if "email" not in u:
+                        u["email"] = None
             except Exception:
-                u["email"] = None
+                pass
+
+    # Upsert directly to Database (PostgreSQL / SQLite) - Deduplication guaranteed!
+    try:
+        saved_count = db_manager.upsert_batch(user_batch, target_source=target_username, scrape_type=scrape_type)
+        with state_lock:
+            scraping_state["db_saved_count"] += saved_count
+        add_log(f"[💾] +{saved_count} akun tersimpan ke Database ({db_manager.DB_TYPE.upper()}) tanpa duplikasi.")
+    except Exception as dbe:
+        add_log(f"[!] Error simpan database: {dbe}")
+
 
 def run_scraper(target_username, scrape_limit, session_id, scrape_type="followers", speed="fast", extract_email=True):
     global stop_event
@@ -146,26 +203,36 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
         scraping_state["is_scraping"] = True
         scraping_state["scrape_type"] = scrape_type
         scraping_state["target"] = target_username
-        scraping_state["current_count"] = 0
         scraping_state["total_target"] = scrape_limit
+        scraping_state["current_count"] = 0
         scraping_state["progress_pct"] = 0
-        scraping_state["status_text"] = f"Mencari profil @{target_username}..."
         scraping_state["error"] = None
         scraping_state["results"] = []
+        scraping_state["emails_found_count"] = 0
+        scraping_state["db_saved_count"] = 0
+        scraping_state["status_text"] = f"Mempersiapkan koneksi..."
 
-    speed_text = {"fast": "Cepat (1.0 - 1.5s)", "normal": "Normal (2.0 - 3.0s)", "safe": "Aman (4.0 - 5.0s)"}.get(speed, speed)
-    add_log(f"Memulai scraping {type_label} untuk @{target_username} (Target: {'Semua' if scrape_limit == 0 else scrape_limit}, Mode: {speed_text})...")
+    speed_names = {"fast": "Cepat (1.0 - 1.5s)", "normal": "Normal (2.0 - 3.0s)", "safe": "Aman (4.0 - 5.0s)"}
+    add_log(f"Memulai scraping {type_label} untuk @{target_username} (Target: {scrape_limit if scrape_limit > 0 else 'Semua'}, Mode: {speed_names.get(speed, speed)})...")
 
     http_session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+    http_session.mount("https://", adapter)
+    http_session.mount("http://", adapter)
+
     try:
-        # Step 1: Look up user ID
-        user_id, count_total = scraper_mod.get_userid(target_username, session_id=session_id)
+        # Step 1: Ambil User ID target
+        with state_lock:
+            scraping_state["status_text"] = f"Mencari User ID untuk @{target_username}..."
+
+        user_id, count_total = scraper_mod.get_userid(target_username, session_id, http_session=http_session, log_callback=add_log)
         if not user_id:
+            err_msg = f"User ID untuk @{target_username} tidak ditemukan atau akun di-private."
             with state_lock:
                 scraping_state["is_scraping"] = False
-                scraping_state["status_text"] = "Gagal: User ID tidak ditemukan"
-                scraping_state["error"] = f"Tidak dapat menemukan user ID untuk @{target_username}"
-            add_log(f"[!] Gagal: User ID untuk @{target_username} tidak ditemukan. Periksa kembali username target.")
+                scraping_state["status_text"] = "Gagal menemukan target"
+                scraping_state["error"] = err_msg
+            add_log(f"[!] {err_msg}")
             return
 
         stat_label = "Total Following" if is_following else "Total Followers"
@@ -210,13 +277,10 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
                 if len(users) >= limit:
                     break
 
-        if extract_email and page_1_users:
+        if page_1_users:
             with state_lock:
-                scraping_state["status_text"] = f"Mengekstrak email publik (Halaman 1)..."
-            process_batch_emails(page_1_users, http_session)
-        else:
-            for u in page_1_users:
-                u["email"] = None
+                scraping_state["status_text"] = f"Mengekstrak followers, following & email (Halaman 1)..."
+            process_batch_details(page_1_users, http_session, target_username, scrape_type, extract_email)
 
         with state_lock:
             scraping_state["current_count"] = len(users)
@@ -286,13 +350,9 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
                 add_log(f"[i] Tidak ada data pengguna baru di Halaman {page_num}. Scraping selesai.")
                 break
 
-            if extract_email:
-                with state_lock:
-                    scraping_state["status_text"] = f"Mengekstrak email publik (Halaman {page_num})..."
-                process_batch_emails(new_in_batch_users, http_session)
-            else:
-                for u in new_in_batch_users:
-                    u["email"] = None
+            with state_lock:
+                scraping_state["status_text"] = f"Mengekstrak followers, following & email (Halaman {page_num})..."
+            process_batch_details(new_in_batch_users, http_session, target_username, scrape_type, extract_email)
 
             with state_lock:
                 scraping_state["current_count"] = len(users)
@@ -305,24 +365,25 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
             if len(users) >= limit:
                 break
 
-        # Save to disk
+        # Save to disk JSON file
         scraper_mod.write_json_data(users, target_username)
 
         with state_lock:
             scraping_state["is_scraping"] = False
             scraping_state["progress_pct"] = 100
             email_info = f" ({scraping_state['emails_found_count']} email publik)" if extract_email else ""
+            db_info = f", {scraping_state['db_saved_count']} disimpan ke DB"
             if stop_event.is_set():
-                scraping_state["status_text"] = f"Dihentikan oleh pengguna. {len(users)} {type_label} didapat{email_info}."
-                add_log(f"[i] Scraping dihentikan. Berhasil mengumpulkan {len(users)} {type_label}{email_info}.")
+                scraping_state["status_text"] = f"Dihentikan pengguna. {len(users)} {type_label} didapat{email_info}{db_info}."
+                add_log(f"[i] Scraping dihentikan. Berhasil mengumpulkan {len(users)} {type_label}{email_info}{db_info}.")
             else:
-                scraping_state["status_text"] = f"Selesai! {len(users)} {type_label} berhasil diambil{email_info}."
-                add_log(f"[+] SELESAI! Berhasil mengumpulkan total {len(users)} {type_label}{email_info}.")
+                scraping_state["status_text"] = f"Selesai! {len(users)} {type_label} berhasil diambil{email_info}{db_info}."
+                add_log(f"[+] SELESAI! Berhasil mengumpulkan total {len(users)} {type_label}{email_info}{db_info}.")
 
     except Exception as e:
         with state_lock:
             scraping_state["is_scraping"] = False
-            scraping_state["status_text"] = f"Terjadi kesalahan: {str(e)}"
+            scraping_state["status_text"] = "Terjadi kesalahan"
             scraping_state["error"] = str(e)
         add_log(f"[!] Error saat scraping: {str(e)}")
     finally:
@@ -421,7 +482,7 @@ def start_scrape():
     scrape_thread.start()
 
     type_name = "following" if scrape_type == "following" else "followers"
-    email_note = " (ekstrak email aktif)" if extract_email else ""
+    email_note = " (ekstrak email & profil aktif)" if extract_email else ""
     return jsonify({"success": True, "message": f"Mulai scraping {type_name} untuk @{target}{email_note}"})
 
 
@@ -431,6 +492,56 @@ def stop_scrape():
     stop_event.set()
     add_log("[User] Menerima instruksi penghentian...")
     return jsonify({"success": True})
+
+
+@app.route("/api/database/stats", methods=["GET"])
+def database_stats():
+    """Mengembalikan statistik database server (PostgreSQL/SQLite)."""
+    return jsonify(db_manager.get_stats())
+
+
+@app.route("/api/database/users", methods=["GET"])
+def database_users():
+    """Mengembalikan daftar akun terbaru yang tersimpan di database."""
+    limit = int(request.args.get("limit", 100))
+    users = db_manager.get_recent_users(limit=limit)
+    return jsonify({"users": users})
+
+
+@app.route("/api/export/excel", methods=["GET"])
+def export_excel():
+    username = request.args.get("username", "").strip()
+    scrape_type = request.args.get("scrape_type", "").strip().lower()
+
+    with state_lock:
+        if not scrape_type:
+            scrape_type = scraping_state.get("scrape_type", "followers")
+        users = list(scraping_state["results"])
+
+    base_dir = "FOLLOWING_DATA" if scrape_type == "following" else "FOLLOWERS_DATA"
+    json_name = "following.json" if scrape_type == "following" else "followers.json"
+
+    # Fallback 1: File disk
+    if not users and username:
+        file_path = os.path.join(base_dir, username, json_name)
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                users = json.load(f)
+
+    # Fallback 2: Database Server
+    if not users:
+        users = db_manager.get_all_for_export(target_source=username if username else None, scrape_type=scrape_type if scrape_type else None)
+
+    if not users:
+        return jsonify({"error": "Tidak ada data untuk diexport ke Excel"}), 404
+
+    buf = excel_exporter.generate_excel_data(users, target_username=username or "data", scrape_type=scrape_type)
+    filename = f"{username or scrape_type}_{scrape_type}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 @app.route("/api/export/csv", methods=["GET"])
@@ -454,11 +565,17 @@ def export_csv():
                 users = json.load(f)
 
     if not users:
+        users = db_manager.get_all_for_export(target_source=username if username else None, scrape_type=scrape_type if scrape_type else None)
+
+    if not users:
         return jsonify({"error": "Tidak ada data untuk diexport"}), 404
 
     si = io.StringIO()
     writer = csv.writer(si)
-    writer.writerow(["No", "Username", "Full Name", "Email", "Status Akun", "Is Verified", "User ID", "Profile URL", "Avatar URL"])
+    writer.writerow([
+        "No", "Username", "Full Name", "Kategori / Status", "Followers", "Following",
+        "Email", "Status Akun", "Is Verified", "User ID", "Target Source", "Profile URL"
+    ])
 
     for i, u in enumerate(users):
         uname = u.get("username", "")
@@ -466,12 +583,15 @@ def export_csv():
             i + 1,
             uname,
             u.get("full_name", ""),
+            u.get("category_type") or "Follower Biasa",
+            u.get("follower_count_str") or u.get("follower_count") or "-",
+            u.get("following_count_str") or u.get("following_count") or "-",
             u.get("email") or "-",
             "Private" if u.get("is_private") else "Public",
             "Yes" if u.get("is_verified") else "No",
             u.get("id") or u.get("pk", ""),
-            f"https://www.instagram.com/{uname}/",
-            u.get("profile_pic_url", "")
+            u.get("target_source") or username,
+            f"https://www.instagram.com/{uname}/"
         ])
 
     output = si.getvalue()
@@ -503,6 +623,9 @@ def export_json():
                 users = json.load(f)
 
     if not users:
+        users = db_manager.get_all_for_export(target_source=username if username else None, scrape_type=scrape_type if scrape_type else None)
+
+    if not users:
         return jsonify({"error": "Tidak ada data untuk diexport"}), 404
 
     output = json.dumps(users, indent=2, ensure_ascii=False)
@@ -523,6 +646,7 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 50)
     print("  [+] Instagram Scraper Suite Web Dashboard Berjalan")
+    print(f"  [*] Database Active: {db_manager.DB_TYPE.upper()}")
     print(f"  [*] Buka di browser: http://{args.host}:{args.port}")
     print("=" * 50 + "\n")
     app.run(host=args.host, port=args.port, debug=False)

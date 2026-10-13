@@ -178,5 +178,9 @@ cython_debug/
 Followers_scraped.txt
 session_file.txt
 
+.env
+*.db
+
 # Folders Data
 FOLLOWERS_DATA
+FOLLOWING_DATA

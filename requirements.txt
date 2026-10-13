@@ -3,3 +3,5 @@ fake_useragent
 colorama
 pyfiglet
 flask
+openpyxl
+psycopg[binary]

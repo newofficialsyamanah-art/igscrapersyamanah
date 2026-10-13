@@ -198,10 +198,27 @@
                         </span>
                     </div>
 
-                    <!-- Progress bar -->
+                    <!-- Stats & Progress -->
                     <div class="space-y-2 mb-4">
+                        <div class="grid grid-cols-3 gap-2 p-2.5 bg-slate-900 border border-slate-800 rounded-xl mb-3">
+                            <div class="text-center">
+                                <span class="block text-[10px] uppercase tracking-wider text-slate-400">Total Scraped</span>
+                                <strong id="count-scraped" class="text-white text-sm">0</strong> <span id="count-total" class="text-[11px] text-slate-500">/ 0</span>
+                            </div>
+                            <div class="text-center border-x border-slate-800">
+                                <span class="block text-[10px] uppercase tracking-wider text-slate-400">Email Publik</span>
+                                <strong id="count-emails" class="text-emerald-400 text-sm">0</strong>
+                            </div>
+                            <div class="text-center">
+                                <span class="block text-[10px] uppercase tracking-wider text-slate-400">Database Server</span>
+                                <div class="inline-flex items-center space-x-1">
+                                    <strong id="count-db" class="text-purple-400 text-sm">0</strong>
+                                    <span id="db-badge" class="text-[9px] px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono uppercase font-bold">DB</span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="flex justify-between text-xs text-slate-400">
-                            <span>Tercapai: <strong id="count-scraped" class="text-white text-sm">0</strong> <span id="count-total">/ 0</span></span>
+                            <span>Progres Pengambilan:</span>
                             <span id="progress-percent" class="font-semibold text-pink-400">0%</span>
                         </div>
                         <div class="w-full bg-slate-900 h-3 rounded-full overflow-hidden border border-slate-800">
@@ -246,13 +263,17 @@
                         <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5"></i>
                     </div>
 
-                    <button onclick="exportCSV()" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
-                        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>
-                        <span>Download CSV</span>
+                    <button onclick="exportExcel()" class="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition shadow-sm shadow-emerald-500/20 active:scale-[0.98]">
+                        <i data-lucide="sheet" class="w-3.5 h-3.5"></i>
+                        <span>Unduh Excel (.xlsx)</span>
                     </button>
-                    <button onclick="exportJSON()" class="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
+                    <button onclick="exportCSV()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
+                        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>
+                        <span>CSV</span>
+                    </button>
+                    <button onclick="exportJSON()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
                         <i data-lucide="file-json" class="w-3.5 h-3.5"></i>
-                        <span>Download JSON</span>
+                        <span>JSON</span>
                     </button>
                 </div>
             </div>
@@ -262,13 +283,15 @@
                 <table class="w-full text-left text-sm">
                     <thead class="bg-slate-900/80 sticky top-0 text-xs uppercase text-slate-400 tracking-wider border-b border-slate-800">
                         <tr>
-                            <th scope="col" class="px-5 py-3.5">No</th>
-                            <th scope="col" class="px-5 py-3.5">User</th>
-                            <th scope="col" class="px-5 py-3.5">Nama Lengkap</th>
-                            <th scope="col" class="px-5 py-3.5">Email Publik</th>
-                            <th scope="col" class="px-5 py-3.5">Status Akun</th>
-                            <th scope="col" class="px-5 py-3.5">User ID (PK)</th>
-                            <th scope="col" class="px-5 py-3.5 text-right">Aksi</th>
+                            <th scope="col" class="px-4 py-3.5">No</th>
+                            <th scope="col" class="px-4 py-3.5">User</th>
+                            <th scope="col" class="px-4 py-3.5">Nama Lengkap</th>
+                            <th scope="col" class="px-4 py-3.5 text-center">Kategori</th>
+                            <th scope="col" class="px-4 py-3.5 text-center">Followers</th>
+                            <th scope="col" class="px-4 py-3.5 text-center">Following</th>
+                            <th scope="col" class="px-4 py-3.5">Email Publik</th>
+                            <th scope="col" class="px-4 py-3.5">Status</th>
+                            <th scope="col" class="px-4 py-3.5 text-right">Aksi</th>
                         </tr>
                     </thead>
                     <tbody id="table-body" class="divide-y divide-slate-800/60 font-sans">
@@ -606,6 +629,13 @@
                 progressBar.style.width = `${state.progress_pct}%`;
                 progressPercent.textContent = `${state.progress_pct}%`;
 
+                const elEmail = document.getElementById('count-emails');
+                if (elEmail) elEmail.textContent = state.emails_found_count || 0;
+                const elDb = document.getElementById('count-db');
+                if (elDb) elDb.textContent = state.db_saved_count || state.current_count || 0;
+                const elDbBadge = document.getElementById('db-badge');
+                if (elDbBadge && state.db_type) elDbBadge.textContent = state.db_type.toUpperCase();
+
                 if (state.is_scraping) {
                     statusLight.className = 'w-2 h-2 rounded-full bg-pink-400 animate-ping';
                     statusText.textContent = state.status_text || 'Sedang mengambil data...';
@@ -671,7 +701,7 @@
                     : 'Belum ada data pengikut. Mulai proses scraping untuk menampilkan hasil di sini.';
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7" class="px-5 py-12 text-center text-slate-500">
+                        <td colspan="9" class="px-5 py-12 text-center text-slate-500">
                             <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
                             ${emptyMsg}
                         </td>
@@ -687,43 +717,58 @@
                 tr.className = 'hover:bg-slate-900/60 transition';
 
                 const avatar = u.profile_pic_url 
-                    ? `<img src="${u.profile_pic_url}" referrerpolicy="no-referrer" class="w-9 h-9 rounded-full object-cover border border-slate-700 bg-slate-800" onerror="this.src='https://ui-avatars.com/api/?name=${u.username}&background=random'">`
-                    : `<div class="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs uppercase text-slate-400">${u.username.substring(0, 2)}</div>`;
+                    ? `<img src="${u.profile_pic_url}" referrerpolicy="no-referrer" class="w-8 h-8 rounded-full object-cover border border-slate-700 bg-slate-800" onerror="this.src='https://ui-avatars.com/api/?name=${u.username}&background=random'">`
+                    : `<div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs uppercase text-slate-400">${u.username.substring(0, 2)}</div>`;
+
+                let categoryBadge = '';
+                const cat = u.category_type || (u.is_verified ? 'Terverifikasi' : (u.is_private ? 'Akun Privat (Follower Biasa)' : 'Follower Biasa'));
+                if (cat === 'Terverifikasi') {
+                    categoryBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-500/20 text-blue-400 border border-blue-500/30">Terverifikasi</span>`;
+                } else if (cat.includes('Privat')) {
+                    categoryBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30">Privat (Follower Biasa)</span>`;
+                } else {
+                    categoryBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">Follower Biasa</span>`;
+                }
 
                 const verifiedBadge = u.is_verified 
-                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">Verified</span>` 
+                    ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-500/20 text-blue-400 border border-blue-500/30">✓</span>` 
                     : '';
 
                 const privateBadge = u.is_private 
-                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30">Private</span>` 
-                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Public</span>`;
+                    ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30">Private</span>` 
+                    : `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Public</span>`;
 
                 const emailHtml = u.email 
-                    ? `<a href="mailto:${u.email}" class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition group" title="Kirim email ke ${u.email}">
+                    ? `<a href="mailto:${u.email}" class="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition group" title="Kirim email ke ${u.email}">
                         <i data-lucide="mail" class="w-3.5 h-3.5 text-emerald-400"></i>
                         <span class="underline decoration-dotted underline-offset-2">${u.email}</span>
                        </a>`
                     : `<span class="text-slate-600 text-xs font-mono">-</span>`;
 
+                const fCount = u.follower_count_str || (u.follower_count ? u.follower_count.toLocaleString() : '-');
+                const gCount = u.following_count_str || (u.following_count ? u.following_count.toLocaleString() : '-');
+
                 tr.innerHTML = `
-                    <td class="px-5 py-3.5 text-xs text-slate-500 font-mono">${i + 1}</td>
-                    <td class="px-5 py-3.5">
-                        <div class="flex items-center space-x-3">
+                    <td class="px-4 py-3 text-xs text-slate-500 font-mono">${i + 1}</td>
+                    <td class="px-4 py-3">
+                        <div class="flex items-center space-x-2.5">
                             ${avatar}
                             <div>
-                                <a href="https://www.instagram.com/${u.username}/" target="_blank" class="font-semibold text-white hover:text-pink-400 flex items-center space-x-1 transition">
+                                <a href="https://www.instagram.com/${u.username}/" target="_blank" class="font-semibold text-white hover:text-pink-400 flex items-center space-x-1 transition text-xs">
                                     <span>@${u.username}</span>
                                     <i data-lucide="external-link" class="w-3 h-3 text-slate-500"></i>
                                 </a>
                             </div>
                         </div>
                     </td>
-                    <td class="px-5 py-3.5 text-slate-300 font-medium">${u.full_name || '<span class="text-slate-600">-</span>'}</td>
-                    <td class="px-5 py-3.5">${emailHtml}</td>
-                    <td class="px-5 py-3.5 space-x-1">${privateBadge} ${verifiedBadge}</td>
-                    <td class="px-5 py-3.5 font-mono text-xs text-slate-400">${u.id || u.pk}</td>
-                    <td class="px-5 py-3.5 text-right">
-                        <a href="https://www.instagram.com/${u.username}/" target="_blank" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md text-xs transition inline-flex items-center space-x-1">
+                    <td class="px-4 py-3 text-slate-300 font-medium text-xs max-w-[130px] truncate" title="${u.full_name || ''}">${u.full_name || '<span class="text-slate-600">-</span>'}</td>
+                    <td class="px-4 py-3 text-center">${categoryBadge}</td>
+                    <td class="px-4 py-3 text-center font-semibold text-slate-200 text-xs">${fCount}</td>
+                    <td class="px-4 py-3 text-center font-medium text-slate-400 text-xs">${gCount}</td>
+                    <td class="px-4 py-3">${emailHtml}</td>
+                    <td class="px-4 py-3 space-x-1">${privateBadge} ${verifiedBadge}</td>
+                    <td class="px-4 py-3 text-right">
+                        <a href="https://www.instagram.com/${u.username}/" target="_blank" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs transition inline-flex items-center space-x-1">
                             <span>Buka</span>
                             <i data-lucide="chevron-right" class="w-3 h-3"></i>
                         </a>
@@ -748,6 +793,16 @@
                 (u.id && String(u.id).includes(query))
             );
             renderTable(filtered);
+        }
+
+        // Export Excel (.xlsx)
+        function exportExcel() {
+            const target = currentTarget || (allScrapedUsers.length > 0 ? 'scraped' : '');
+            if (!target) {
+                alert('Belum ada data untuk didownload ke Excel!');
+                return;
+            }
+            window.location.href = `/api/export/excel?username=${encodeURIComponent(target)}&scrape_type=${encodeURIComponent(currentScrapeMode)}`;
         }
 
         // Export CSV
