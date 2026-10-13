@@ -206,7 +206,7 @@ def load_existing_data(data_json_file):
     
     return existing_data
 
-def get_userid(to_scrape_username, session_id=None):
+def get_userid(to_scrape_username, session_id=None, http_session=None, log_callback=None, **kwargs):
     """Get user ID and following count from Instagram using topsearch and profile fallbacks."""
     print(f'\n{Colors.GREEN}Getting userid for @{to_scrape_username}...{Colors.RESET}\n')
     headers = {
