@@ -185,7 +185,7 @@ def process_batch_details(user_batch, http_session, target_username, scrape_type
         add_log(f"[!] Error simpan database: {dbe}")
 
 
-def run_scraper(target_username, scrape_limit, session_id, scrape_type="followers", speed="fast", extract_email=True):
+def run_scraper(target_username, scrape_limit, session_id, scrape_type="followers", speed="fast", extract_email=True, resume_mode=True):
     global stop_event
     is_following = (scrape_type == "following")
     type_label = "following" if is_following else "pengikut (followers)"
@@ -213,7 +213,8 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
         scraping_state["status_text"] = f"Mempersiapkan koneksi..."
 
     speed_names = {"fast": "Cepat (1.0 - 1.5s)", "normal": "Normal (2.0 - 3.0s)", "safe": "Aman (4.0 - 5.0s)"}
-    add_log(f"Memulai scraping {type_label} untuk @{target_username} (Target: {scrape_limit if scrape_limit > 0 else 'Semua'}, Mode: {speed_names.get(speed, speed)})...")
+    resume_note = " (Lanjutkan bertahap)" if resume_mode else " (Mulai dari awal)"
+    add_log(f"Memulai scraping {type_label} untuk @{target_username} (Target: {scrape_limit if scrape_limit > 0 else 'Semua'}{resume_note}, Mode: {speed_names.get(speed, speed)})...")
 
     http_session = requests.Session()
     adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
@@ -237,14 +238,32 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
 
         stat_label = "Total Following" if is_following else "Total Followers"
         add_log(f"[+] Ditemukan User ID: {user_id}" + (f" ({stat_label}: {count_total})" if count_total else ""))
-        
+
+        # Checkpoint check for resuming
+        checkpoint = None
+        existing_ids = set()
+        starting_max_id = None
+        if resume_mode:
+            checkpoint = db_manager.get_checkpoint(target_username, scrape_type)
+            existing_ids = db_manager.get_existing_ids_for_target(target_username, scrape_type)
+            if checkpoint and checkpoint.get("next_max_id"):
+                starting_max_id = str(checkpoint["next_max_id"])
+                already_scraped = checkpoint.get("total_scraped", len(existing_ids))
+                add_log(f"[▶] Mode Resume: Melanjutkan dari cursor terakhir (Tersimpan di DB: {already_scraped} akun).")
+            elif checkpoint and checkpoint.get("is_completed"):
+                add_log(f"[i] Info: Target @{target_username} sebelumnya sudah selesai di-scrape sampai akhir.")
+            elif len(existing_ids) > 0:
+                add_log(f"[i] Ditemukan {len(existing_ids)} akun tersimpan di DB untuk target ini. Memulai dari Halaman 1...")
+        else:
+            db_manager.reset_checkpoint(target_username, scrape_type)
+            add_log(f"[🔄] Mode Awal: Memulai scraping baru dari Halaman 1...")
+
         with state_lock:
-            scraping_state["status_text"] = f"Mengambil data {type_label} (Batch 1)..."
+            scraping_state["status_text"] = f"Mengambil data {type_label}..."
             scraping_state["emails_found_count"] = 0
 
-        # Step 2: Pagination scraping
+        # Pagination parameters
         users = []
-        existing_ids = set()
         seen_max_ids = set()
         limit = scrape_limit if scrape_limit > 0 else float("inf")
         params = {
@@ -252,121 +271,114 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
         }
         if not is_following:
             params["search_surface"] = "follow_list_page"
+        if starting_max_id:
+            params["max_id"] = starting_max_id
+            seen_max_ids.add(starting_max_id)
 
-        # First page request
-        add_log(f"[i] Mengambil Halaman 1 dari Instagram...")
-        resp = scraper_mod.req(params, user_id, target_username, session_id, http_session=http_session, log_callback=add_log)
-        if not resp or resp.status_code != 200:
-            err_msg = f"Request pertama gagal dengan status {resp.status_code if resp else 'koneksi error'}"
-            with state_lock:
-                scraping_state["is_scraping"] = False
-                scraping_state["status_text"] = "Gagal menghubungi Instagram"
-                scraping_state["error"] = err_msg
-            add_log(f"[!] {err_msg}")
-            return
+        page_num = 1
+        has_more = True
 
-        result = resp.json()
-        new_users = result.get("users", [])
-        page_1_users = []
-        for u in new_users:
-            uid = str(u.get("id") or u.get("pk"))
-            if uid not in existing_ids:
-                existing_ids.add(uid)
-                page_1_users.append(u)
-                users.append(u)
-                if len(users) >= limit:
+        while has_more and len(users) < limit and not stop_event.is_set():
+            if page_num > 1:
+                # Live countdown delay between pages
+                delay = round(random.uniform(min_delay, max_delay), 1)
+                end_time = time.time() + delay
+                while time.time() < end_time and not stop_event.is_set():
+                    rem = max(0.0, end_time - time.time())
+                    with state_lock:
+                        scraping_state["status_text"] = f"Jeda {rem:.1f}s sebelum mengambil Halaman {page_num}..."
+                    time.sleep(min(0.2, rem))
+
+                if stop_event.is_set():
                     break
 
-        if page_1_users:
             with state_lock:
-                scraping_state["status_text"] = f"Mengekstrak followers, following & email (Halaman 1)..."
-            process_batch_details(page_1_users, http_session, target_username, scrape_type, extract_email)
+                scraping_state["status_text"] = f"Mengambil Halaman {page_num} dari Instagram..."
 
-        with state_lock:
-            scraping_state["current_count"] = len(users)
-            scraping_state["results"] = list(users)
-            if limit != float("inf"):
-                scraping_state["progress_pct"] = min(100, int((len(users) / limit) * 100))
-            else:
-                scraping_state["progress_pct"] = min(95, int(len(users) / 5))
-
-        target_display = f"/{scrape_limit}" if scrape_limit > 0 else ""
-        add_log(f"[+] Halaman 1 selesai: +{len(users)} data (Total: {len(users)}{target_display}).")
-
-        # Check verified limit for followers (Instagram restricts verified accounts to 50 max)
-        if not is_following and result.get("page_size") == 50 and not result.get("big_list"):
-            add_log(f"[!] Akun @{target_username} terverifikasi (Meta membatasi maks 50 follower via API).")
-
-        # Pagination loop
-        page_num = 1
-        while result.get("next_max_id") and len(users) < limit and not stop_event.is_set():
-            next_id = str(result.get("next_max_id"))
-            if next_id in seen_max_ids:
-                add_log(f"[i] Paginasi Instagram berulang (next_max_id: {next_id}). Scraping selesai.")
-                break
-            seen_max_ids.add(next_id)
-            params["max_id"] = next_id
-
-            page_num += 1
-
-            # Live countdown delay to prevent stuck impression and avoid blocking
-            delay = round(random.uniform(min_delay, max_delay), 1)
-            end_time = time.time() + delay
-            while time.time() < end_time and not stop_event.is_set():
-                rem = max(0.0, end_time - time.time())
-                with state_lock:
-                    scraping_state["status_text"] = f"Jeda {rem:.1f}s sebelum mengambil Halaman {page_num}..."
-                time.sleep(min(0.2, rem))
-
-            if stop_event.is_set():
-                break
-
-            with state_lock:
-                scraping_state["status_text"] = f"Mengambil Halaman {page_num}..."
-
-            add_log(f"[i] Mengambil Halaman {page_num}...")
+            add_log(f"[i] Mengambil Halaman {page_num} dari Instagram...")
             resp = scraper_mod.req(params, user_id, target_username, session_id, http_session=http_session, log_callback=add_log)
             if not resp or resp.status_code != 200:
-                add_log(f"[!] Gagal mengambil Halaman {page_num}. Menyimpan data yang sudah didapat.")
-                break
+                err_msg = f"Request Halaman {page_num} gagal dengan status {resp.status_code if resp else 'koneksi error'}"
+                if page_num == 1 and not users:
+                    with state_lock:
+                        scraping_state["is_scraping"] = False
+                        scraping_state["status_text"] = "Gagal menghubungi Instagram"
+                        scraping_state["error"] = err_msg
+                    add_log(f"[!] {err_msg}")
+                    return
+                else:
+                    add_log(f"[!] {err_msg}. Menyimpan data yang sudah didapat.")
+                    break
 
             result = resp.json()
             batch = result.get("users", [])
             if not batch:
                 add_log(f"[i] Halaman {page_num} kosong. Scraping selesai.")
+                total_now = db_manager.count_users_for_target(target_username, scrape_type)
+                db_manager.save_checkpoint(target_username, scrape_type, next_max_id=None, total_scraped=total_now, is_completed=True)
                 break
 
+            # Filter duplicates against current run AND previous database records
             new_in_batch_users = []
             for u in batch:
-                uid = str(u.get("id") or u.get("pk"))
-                if uid not in existing_ids:
+                uid = str(u.get("id") or u.get("pk") or "")
+                uname = str(u.get("username") or "").lower()
+                if uid and uid not in existing_ids and uname not in existing_ids:
                     existing_ids.add(uid)
+                    existing_ids.add(uname)
                     new_in_batch_users.append(u)
                     users.append(u)
                     if len(users) >= limit:
                         break
 
-            if not new_in_batch_users:
-                add_log(f"[i] Tidak ada data pengguna baru di Halaman {page_num}. Scraping selesai.")
-                break
-
-            with state_lock:
-                scraping_state["status_text"] = f"Mengekstrak followers, following & email (Halaman {page_num})..."
-            process_batch_details(new_in_batch_users, http_session, target_username, scrape_type, extract_email)
+            if new_in_batch_users:
+                with state_lock:
+                    scraping_state["status_text"] = f"Mengekstrak followers, following & email (Halaman {page_num})..."
+                process_batch_details(new_in_batch_users, http_session, target_username, scrape_type, extract_email)
+            else:
+                add_log(f"[i] Halaman {page_num}: {len(batch)} akun sudah ada di database (dilewati agar tidak ganda).")
 
             with state_lock:
                 scraping_state["current_count"] = len(users)
                 scraping_state["results"] = list(users)
                 if limit != float("inf"):
                     scraping_state["progress_pct"] = min(100, int((len(users) / limit) * 100))
+                else:
+                    scraping_state["progress_pct"] = min(95, int(len(users) / 5))
 
-            add_log(f"[+] Halaman {page_num} selesai: +{len(new_in_batch_users)} data (Total: {len(users)}{target_display}).")
+            target_display = f"/{scrape_limit}" if scrape_limit > 0 else ""
+            add_log(f"[+] Halaman {page_num} selesai: +{len(new_in_batch_users)} baru (Total sesi ini: {len(users)}{target_display}).")
+
+            # Check verified limit for followers (Instagram restricts verified accounts to 50 max)
+            if not is_following and result.get("page_size") == 50 and not result.get("big_list"):
+                add_log(f"[!] Akun @{target_username} terverifikasi (Meta membatasi maks 50 follower via API).")
+
+            # Check next_max_id and save checkpoint
+            next_id = result.get("next_max_id")
+            total_now = db_manager.count_users_for_target(target_username, scrape_type)
+            if next_id:
+                next_id_str = str(next_id)
+                if next_id_str in seen_max_ids:
+                    add_log(f"[i] Paginasi Instagram berulang (cursor: {next_id_str}). Scraping selesai.")
+                    db_manager.save_checkpoint(target_username, scrape_type, next_max_id=None, total_scraped=total_now, is_completed=True)
+                    break
+                seen_max_ids.add(next_id_str)
+                params["max_id"] = next_id_str
+                db_manager.save_checkpoint(target_username, scrape_type, next_max_id=next_id_str, total_scraped=total_now, is_completed=False)
+            else:
+                has_more = False
+                db_manager.save_checkpoint(target_username, scrape_type, next_max_id=None, total_scraped=total_now, is_completed=True)
+                add_log(f"[i] Seluruh {type_label} untuk @{target_username} telah tercapai sampai halaman terakhir.")
+                break
 
             if len(users) >= limit:
                 break
 
+            page_num += 1
+
         # Save to disk JSON file
-        scraper_mod.write_json_data(users, target_username)
+        if users:
+            scraper_mod.write_json_data(users, target_username)
 
         with state_lock:
             scraping_state["is_scraping"] = False
@@ -379,6 +391,7 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
             else:
                 scraping_state["status_text"] = f"Selesai! {len(users)} {type_label} berhasil diambil{email_info}{db_info}."
                 add_log(f"[+] SELESAI! Berhasil mengumpulkan total {len(users)} {type_label}{email_info}{db_info}.")
+
 
     except Exception as e:
         with state_lock:
@@ -463,6 +476,7 @@ def start_scrape():
         scrape_type = "followers"
 
     extract_email = bool(data.get("extract_email", True))
+    resume_mode = bool(data.get("resume", True))
 
     if not target:
         return jsonify({"success": False, "message": "Username target tidak boleh kosong"}), 400
@@ -478,12 +492,13 @@ def start_scrape():
         speed = "fast"
 
     stop_event.clear()
-    scrape_thread = threading.Thread(target=run_scraper, args=(target, limit, active_session_id, scrape_type, speed, extract_email), daemon=True)
+    scrape_thread = threading.Thread(target=run_scraper, args=(target, limit, active_session_id, scrape_type, speed, extract_email, resume_mode), daemon=True)
     scrape_thread.start()
 
     type_name = "following" if scrape_type == "following" else "followers"
     email_note = " (ekstrak email & profil aktif)" if extract_email else ""
-    return jsonify({"success": True, "message": f"Mulai scraping {type_name} untuk @{target}{email_note}"})
+    resume_note = " [Mode Bertahap/Resume]" if resume_mode else " [Mulai dari awal]"
+    return jsonify({"success": True, "message": f"Mulai scraping {type_name} untuk @{target}{email_note}{resume_note}"})
 
 
 @app.route("/api/scrape/stop", methods=["POST"])
@@ -492,6 +507,41 @@ def stop_scrape():
     stop_event.set()
     add_log("[User] Menerima instruksi penghentian...")
     return jsonify({"success": True})
+
+
+@app.route("/api/target/info", methods=["GET"])
+def get_target_info():
+    """Mengembalikan info progress scraping bertahap untuk target tertentu."""
+    target = request.args.get("target", "").strip().lstrip("@").lower()
+    scrape_type = request.args.get("scrape_type", "followers").strip().lower()
+    if not target:
+        return jsonify({"success": False, "message": "Target kosong"}), 400
+
+    total_in_db = db_manager.count_users_for_target(target, scrape_type)
+    checkpoint = db_manager.get_checkpoint(target, scrape_type)
+    return jsonify({
+        "success": True,
+        "target": target,
+        "scrape_type": scrape_type,
+        "total_in_db": total_in_db,
+        "has_checkpoint": bool(checkpoint and checkpoint.get("next_max_id")),
+        "is_completed": bool(checkpoint and checkpoint.get("is_completed")),
+        "last_updated": checkpoint.get("last_updated") if checkpoint else None
+    })
+
+
+@app.route("/api/target/reset", methods=["POST"])
+def reset_target_cursor():
+    """Mereset cursor checkpoint agar target ini bisa di-scrape ulang dari awal."""
+    data = request.get_json() or {}
+    target = data.get("target", "").strip().lstrip("@").lower()
+    scrape_type = data.get("scrape_type", "followers").strip().lower()
+    if not target:
+        return jsonify({"success": False, "message": "Target kosong"}), 400
+
+    db_manager.reset_checkpoint(target, scrape_type)
+    add_log(f"[User] Cursor checkpoint untuk @{target} ({scrape_type}) berhasil direset. Scraping berikutnya akan mulai dari awal.")
+    return jsonify({"success": True, "message": f"Cursor untuk @{target} berhasil direset."})
 
 
 @app.route("/api/database/stats", methods=["GET"])

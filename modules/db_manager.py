@@ -73,6 +73,15 @@ def init_db():
                 scrape_type VARCHAR(50) DEFAULT 'followers',
                 scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS scrape_checkpoints (
+                target_username VARCHAR(255) NOT NULL,
+                scrape_type VARCHAR(50) NOT NULL,
+                next_max_id TEXT,
+                total_scraped INTEGER DEFAULT 0,
+                is_completed BOOLEAN DEFAULT FALSE,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (target_username, scrape_type)
+            );
             CREATE INDEX IF NOT EXISTS idx_scraped_username ON scraped_users(username);
             CREATE INDEX IF NOT EXISTS idx_scraped_target ON scraped_users(target_source);
             """)
@@ -95,6 +104,15 @@ def init_db():
                 target_source VARCHAR(255),
                 scrape_type VARCHAR(50) DEFAULT 'followers',
                 scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS scrape_checkpoints (
+                target_username VARCHAR(255) NOT NULL,
+                scrape_type VARCHAR(50) NOT NULL,
+                next_max_id TEXT,
+                total_scraped INTEGER DEFAULT 0,
+                is_completed BOOLEAN DEFAULT 0,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (target_username, scrape_type)
             );
             CREATE INDEX IF NOT EXISTS idx_scraped_username ON scraped_users(username);
             CREATE INDEX IF NOT EXISTS idx_scraped_target ON scraped_users(target_source);
@@ -292,8 +310,111 @@ def get_all_for_export(target_source=None, scrape_type=None):
     finally:
         conn.close()
 
+def get_checkpoint(target_username, scrape_type="followers"):
+    """Mengambil checkpoint pagination terakhir untuk target tertentu."""
+    target = target_username.strip().lower()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        query = "SELECT next_max_id, total_scraped, is_completed, last_updated FROM scrape_checkpoints WHERE target_username = %s AND scrape_type = %s" if DB_TYPE == "postgresql" else "SELECT next_max_id, total_scraped, is_completed, last_updated FROM scrape_checkpoints WHERE target_username = ? AND scrape_type = ?"
+        cur.execute(query, (target, scrape_type))
+        row = cur.fetchone()
+        if row:
+            return {
+                "next_max_id": row[0],
+                "total_scraped": row[1] or 0,
+                "is_completed": bool(row[2]),
+                "last_updated": str(row[3])
+            }
+        return None
+    finally:
+        conn.close()
+
+def save_checkpoint(target_username, scrape_type="followers", next_max_id=None, total_scraped=0, is_completed=False):
+    """Menyimpan atau memperbarui posisi pagination (next_max_id) untuk target."""
+    target = target_username.strip().lower()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if DB_TYPE == "postgresql":
+            cur.execute("""
+                INSERT INTO scrape_checkpoints (target_username, scrape_type, next_max_id, total_scraped, is_completed, last_updated)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (target_username, scrape_type) DO UPDATE SET
+                    next_max_id = EXCLUDED.next_max_id,
+                    total_scraped = EXCLUDED.total_scraped,
+                    is_completed = EXCLUDED.is_completed,
+                    last_updated = CURRENT_TIMESTAMP;
+            """, (target, scrape_type, next_max_id, total_scraped, is_completed))
+        else:
+            cur.execute("""
+                INSERT INTO scrape_checkpoints (target_username, scrape_type, next_max_id, total_scraped, is_completed, last_updated)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (target_username, scrape_type) DO UPDATE SET
+                    next_max_id = excluded.next_max_id,
+                    total_scraped = excluded.total_scraped,
+                    is_completed = excluded.is_completed,
+                    last_updated = CURRENT_TIMESTAMP;
+            """, (target, scrape_type, next_max_id, total_scraped, 1 if is_completed else 0))
+        conn.commit()
+    finally:
+        conn.close()
+
+def reset_checkpoint(target_username, scrape_type="followers"):
+    """Mereset checkpoint agar scraping bisa diulang dari awal untuk target ini."""
+    target = target_username.strip().lower()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        query = "DELETE FROM scrape_checkpoints WHERE target_username = %s AND scrape_type = %s" if DB_TYPE == "postgresql" else "DELETE FROM scrape_checkpoints WHERE target_username = ? AND scrape_type = ?"
+        cur.execute(query, (target, scrape_type))
+        conn.commit()
+    finally:
+        conn.close()
+
+def count_users_for_target(target_username, scrape_type=None):
+    """Menghitung total user yang sudah tersimpan di DB untuk target ini."""
+    target = target_username.strip().lower()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if scrape_type:
+            query = "SELECT COUNT(*) FROM scraped_users WHERE target_source = %s AND scrape_type = %s" if DB_TYPE == "postgresql" else "SELECT COUNT(*) FROM scraped_users WHERE target_source = ? AND scrape_type = ?"
+            cur.execute(query, (target, scrape_type))
+        else:
+            query = "SELECT COUNT(*) FROM scraped_users WHERE target_source = %s" if DB_TYPE == "postgresql" else "SELECT COUNT(*) FROM scraped_users WHERE target_source = ?"
+            cur.execute(query, (target,))
+        row = cur.fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()
+
+def get_existing_ids_for_target(target_username, scrape_type=None):
+    """Mengembalikan set instagram_id dan username yang sudah pernah tersimpan untuk target ini."""
+    target = target_username.strip().lower()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if scrape_type:
+            query = "SELECT instagram_id, username FROM scraped_users WHERE target_source = %s AND scrape_type = %s" if DB_TYPE == "postgresql" else "SELECT instagram_id, username FROM scraped_users WHERE target_source = ? AND scrape_type = ?"
+            cur.execute(query, (target, scrape_type))
+        else:
+            query = "SELECT instagram_id, username FROM scraped_users WHERE target_source = %s" if DB_TYPE == "postgresql" else "SELECT instagram_id, username FROM scraped_users WHERE target_source = ?"
+            cur.execute(query, (target,))
+        rows = cur.fetchall()
+        id_set = set()
+        for r in rows:
+            if r[0]:
+                id_set.add(str(r[0]))
+            if r[1]:
+                id_set.add(str(r[1]).lower())
+        return id_set
+    finally:
+        conn.close()
+
 # Initialize DB tables on import
 try:
     init_db()
 except Exception as e:
     print(f"[DB Init Error]: {e}")
+
