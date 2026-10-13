@@ -515,8 +515,14 @@ def export_json():
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Instagram Scraper Suite Web Server")
+    parser.add_argument("--port", "-p", type=int, default=int(os.environ.get("PORT", 5000)), help="Port to listen on")
+    parser.add_argument("--host", "-H", type=str, default=os.environ.get("HOST", "127.0.0.1"), help="Host to listen on")
+    args = parser.parse_args()
+
     print("\n" + "=" * 50)
     print("  [+] Instagram Scraper Suite Web Dashboard Berjalan")
-    print("  [*] Buka di browser: http://127.0.0.1:5000")
+    print(f"  [*] Buka di browser: http://{args.host}:{args.port}")
     print("=" * 50 + "\n")
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host=args.host, port=args.port, debug=False)
