@@ -51,10 +51,10 @@ def add_log(message):
         if len(scraping_state["logs"]) > 200:
             scraping_state["logs"] = scraping_state["logs"][-200:]
 
-def extract_profile_details(username, http_session=None):
+def extract_profile_details(username):
     """
     Mengambil email publik, jumlah followers, following, dan bio
-    melalui Googlebot pre-rendered page.
+    melalui Googlebot pre-rendered page tanpa cookie Instagram.
     """
     details = {
         "email": None,
@@ -71,13 +71,22 @@ def extract_profile_details(username, http_session=None):
             'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
             'Accept-Language': 'en-US,en;q=0.9'
         }
-        client = http_session if http_session is not None else requests
-        resp = client.get(url, headers=headers, timeout=5)
+        # PENTING: Selalu gunakan clean requests tanpa cookie sesi Instagram.
+        # Jika membawa cookie, Instagram akan melayani React SPA kosong tanpa meta tags.
+        resp = requests.get(url, headers=headers, timeout=8)
         if resp.status_code == 200:
             html = resp.text
 
-            # 1. Parse Followers & Following count dari meta og:description
-            m_counts = re.search(r'([\d.,KMkm]+)\s+Followers,\s*([\d.,KMkm]+)\s+Following', html, re.IGNORECASE)
+            # 1. Parse Followers & Following count
+            # Pattern 1: Standar og:description meta tag "X Followers, Y Following"
+            m_counts = re.search(r'([\d.,KMkm]+)\s+(?:Followers|Pengikut|followers),\s*([\d.,KMkm]+)\s+(?:Following|Mengikuti|following)', html, re.IGNORECASE)
+            if not m_counts:
+                # Pattern 2: Variasi pemisah spasi atau karakter lain
+                m_counts = re.search(r'([\d.,KMkm]+)\s+Followers[^\w\d]+([\d.,KMkm]+)\s+Following', html, re.IGNORECASE)
+            if not m_counts:
+                # Pattern 3: Cari di dalam tag content="..."
+                m_counts = re.search(r'content=[\'"][^\'"]*?([\d.,KMkm]+)\s+(?:Followers|Pengikut)[^,\d]*?,\s*([\d.,KMkm]+)\s+(?:Following|Mengikuti)', html, re.IGNORECASE)
+
             if m_counts:
                 f_str = m_counts.group(1)
                 g_str = m_counts.group(2)
@@ -150,10 +159,10 @@ def process_batch_details(user_batch, http_session, target_username, scrape_type
         if "following_count_str" not in u:
             u["following_count_str"] = "-"
 
-    # Concurrently fetch detailed follower count and email
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+    # Concurrently fetch detailed follower count and email (clean requests, no session cookies)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_map = {
-            executor.submit(extract_profile_details, u.get("username"), http_session): u
+            executor.submit(extract_profile_details, u.get("username")): u
             for u in user_batch
         }
         for future in concurrent.futures.as_completed(future_map):

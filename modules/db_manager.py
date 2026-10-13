@@ -202,8 +202,8 @@ def upsert_batch(users_list, target_source="", scrape_type="followers"):
                         email = COALESCE(EXCLUDED.email, scraped_users.email),
                         follower_count = CASE WHEN EXCLUDED.follower_count > 0 THEN EXCLUDED.follower_count ELSE scraped_users.follower_count END,
                         following_count = CASE WHEN EXCLUDED.following_count > 0 THEN EXCLUDED.following_count ELSE scraped_users.following_count END,
-                        follower_count_str = CASE WHEN EXCLUDED.follower_count_str != '0' THEN EXCLUDED.follower_count_str ELSE scraped_users.follower_count_str END,
-                        following_count_str = CASE WHEN EXCLUDED.following_count_str != '0' THEN EXCLUDED.following_count_str ELSE scraped_users.following_count_str END,
+                        follower_count_str = CASE WHEN EXCLUDED.follower_count_str NOT IN ('-', '0', '') THEN EXCLUDED.follower_count_str ELSE scraped_users.follower_count_str END,
+                        following_count_str = CASE WHEN EXCLUDED.following_count_str NOT IN ('-', '0', '') THEN EXCLUDED.following_count_str ELSE scraped_users.following_count_str END,
                         target_source = EXCLUDED.target_source,
                         scrape_type = EXCLUDED.scrape_type;
                 """, (
@@ -226,8 +226,8 @@ def upsert_batch(users_list, target_source="", scrape_type="followers"):
                         email = COALESCE(excluded.email, scraped_users.email),
                         follower_count = CASE WHEN excluded.follower_count > 0 THEN excluded.follower_count ELSE scraped_users.follower_count END,
                         following_count = CASE WHEN excluded.following_count > 0 THEN excluded.following_count ELSE scraped_users.following_count END,
-                        follower_count_str = CASE WHEN excluded.follower_count_str != '0' THEN excluded.follower_count_str ELSE scraped_users.follower_count_str END,
-                        following_count_str = CASE WHEN excluded.following_count_str != '0' THEN excluded.following_count_str ELSE scraped_users.following_count_str END,
+                        follower_count_str = CASE WHEN excluded.follower_count_str NOT IN ('-', '0', '') THEN excluded.follower_count_str ELSE scraped_users.follower_count_str END,
+                        following_count_str = CASE WHEN excluded.following_count_str NOT IN ('-', '0', '') THEN excluded.following_count_str ELSE scraped_users.following_count_str END,
                         target_source = excluded.target_source,
                         scrape_type = excluded.scrape_type;
                 """, (
