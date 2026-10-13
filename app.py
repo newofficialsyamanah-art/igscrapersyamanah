@@ -553,8 +553,10 @@ def database_stats():
 @app.route("/api/database/users", methods=["GET"])
 def database_users():
     """Mengembalikan daftar akun terbaru yang tersimpan di database."""
-    limit = int(request.args.get("limit", 100))
-    users = db_manager.get_recent_users(limit=limit)
+    target = request.args.get("target", "").strip().lstrip("@").lower()
+    scrape_type = request.args.get("scrape_type", "").strip().lower()
+    limit = int(request.args.get("limit", 200))
+    users = db_manager.get_recent_users(limit=limit, target_source=target if target else None, scrape_type=scrape_type if scrape_type else None)
     return jsonify({"users": users})
 
 
