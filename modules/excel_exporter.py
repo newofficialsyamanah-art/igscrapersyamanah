@@ -1,7 +1,28 @@
 import io
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles.cell_style import CellStyle
 from openpyxl.utils import get_column_letter
+
+# Fix openpyxl CellStyle bug: ensure applyFont, applyFill, applyBorder are written to cellXfs
+# so Microsoft Excel, LibreOffice, and WPS Office properly render fills and font colors!
+if "applyFill" not in CellStyle.__attrs__:
+    CellStyle.__attrs__ = (
+        'numFmtId', 'fontId', 'fillId', 'borderId',
+        'applyFont', 'applyFill', 'applyBorder',
+        'applyAlignment', 'applyProtection', 'pivotButton', 'quotePrefix', 'xfId'
+    )
+    _orig_from_array = CellStyle.from_array
+    def _patched_from_array(cls, style):
+        cs = _orig_from_array(style)
+        if style.fontId > 0:
+            cs.applyFont = True
+        if style.fillId > 0:
+            cs.applyFill = True
+        if style.borderId > 0:
+            cs.applyBorder = True
+        return cs
+    CellStyle.from_array = classmethod(_patched_from_array)
 
 def generate_excel_data(users, target_username="data", scrape_type="followers"):
     wb = Workbook()
@@ -28,15 +49,15 @@ def generate_excel_data(users, target_username="data", scrape_type="followers"):
     ws.append(headers)
     ws.row_dimensions[1].height = 28
 
-    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFFFF")
+    header_fill = PatternFill(start_color="FF1E293B", end_color="FF1E293B", fill_type="solid")
     center_align = Alignment(horizontal="center", vertical="center", wrap_text=False)
     left_align = Alignment(horizontal="left", vertical="center", wrap_text=False)
     thin_border = Border(
-        left=Side(style='thin', color='CBD5E1'),
-        right=Side(style='thin', color='CBD5E1'),
-        top=Side(style='thin', color='CBD5E1'),
-        bottom=Side(style='thin', color='CBD5E1')
+        left=Side(style='thin', color='FFCBD5E1'),
+        right=Side(style='thin', color='FFCBD5E1'),
+        top=Side(style='thin', color='FFCBD5E1'),
+        bottom=Side(style='thin', color='FFCBD5E1')
     )
 
     # Style Row 1 Headers
@@ -107,15 +128,15 @@ def generate_excel_data(users, target_username="data", scrape_type="followers"):
             # Clickable profile link
             if col_idx == 11:
                 cell.hyperlink = link
-                cell.font = Font(name="Calibri", size=10, color="0284C7", underline="single")
+                cell.font = Font(name="Calibri", size=10, color="FF0284C7", underline="single")
 
             # Highlight email cell
             if col_idx == 7 and email != "-":
-                cell.fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
-                cell.font = Font(name="Calibri", size=10, bold=True, color="166534")
+                cell.fill = PatternFill(start_color="FFDCFCE7", end_color="FFDCFCE7", fill_type="solid")
+                cell.font = Font(name="Calibri", size=10, bold=True, color="FF166534")
             # Zebra striping
             elif row_idx % 2 == 1:
-                cell.fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+                cell.fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
 
         row_idx += 1
 
