@@ -179,6 +179,50 @@
                         </label>
                     </div>
 
+                    <!-- Auto-Batch Mode (Anti-Banned) -->
+                    <div class="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2.5">
+                        <label class="flex items-center justify-between cursor-pointer select-none">
+                            <div class="flex items-center space-x-2.5">
+                                <div class="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                    <i data-lucide="layers" class="w-4 h-4"></i>
+                                </div>
+                                <div>
+                                    <span class="text-xs font-semibold text-slate-200">Mode Batch Otomatis (Anti-Banned)</span>
+                                    <p class="text-[11px] text-slate-400">Ambil per kloter + jeda istirahat otomatis antar batch</p>
+                                </div>
+                            </div>
+                            <input type="checkbox" id="check-batch-mode" onchange="toggleBatchConfig()"
+                                class="w-4 h-4 text-emerald-500 bg-slate-800 border-slate-700 rounded focus:ring-emerald-500 focus:ring-offset-slate-900 cursor-pointer">
+                        </label>
+
+                        <!-- Batch Settings Panel (Collapsible) -->
+                        <div id="batch-config-panel" class="hidden pt-2.5 border-t border-slate-800/80 space-y-2">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Ukuran Batch</label>
+                                    <select id="batch-size" class="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                                        <option value="25">25 Akun / Batch</option>
+                                        <option value="50" selected>50 Akun / Batch</option>
+                                        <option value="100">100 Akun / Batch</option>
+                                        <option value="200">200 Akun / Batch</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Jeda Cooldown</label>
+                                    <select id="batch-delay" class="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                                        <option value="60">1 Menit</option>
+                                        <option value="120">2 Menit</option>
+                                        <option value="180" selected>3 Menit (Disarankan)</option>
+                                        <option value="300">5 Menit (Sangat Aman)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <p class="text-[10px] text-emerald-400/90 leading-tight">
+                                💡 Ambil 1 kloter ➔ simpan ke DB ➔ istirahat otomatis ➔ lanjut kloter berikutnya hingga target tercapai.
+                            </p>
+                        </div>
+                    </div>
+
                     <!-- Email Extraction Toggle -->
                     <div class="p-3 bg-slate-900 border border-slate-800 rounded-xl">
                         <label class="flex items-center justify-between cursor-pointer select-none">
@@ -418,6 +462,17 @@
             else speedDesc.textContent = '🛡️ Aman (4.0 - 5.0s)';
         }
 
+        // Helper: Toggle Auto-Batch Config Panel
+        function toggleBatchConfig() {
+            const isChecked = document.getElementById('check-batch-mode').checked;
+            const panel = document.getElementById('batch-config-panel');
+            if (isChecked) {
+                panel.classList.remove('hidden');
+            } else {
+                panel.classList.add('hidden');
+            }
+        }
+
         // Helper: Switch Scrape Mode (followers / following)
         function switchScrapeMode(mode) {
             currentScrapeMode = mode;
@@ -611,6 +666,9 @@
 
             const extract_email = document.getElementById('check-extract-email') ? document.getElementById('check-extract-email').checked : true;
             const resume = document.getElementById('check-resume-mode') ? document.getElementById('check-resume-mode').checked : true;
+            const batch_mode = document.getElementById('check-batch-mode') ? document.getElementById('check-batch-mode').checked : false;
+            const batch_size = parseInt(document.getElementById('batch-size').value) || 50;
+            const batch_delay_seconds = parseInt(document.getElementById('batch-delay').value) || 180;
 
             document.getElementById('btn-start').disabled = true;
             document.getElementById('btn-stop').disabled = false;
@@ -619,7 +677,17 @@
                 const res = await fetch('/api/scrape/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ target, limit, scrape_type: currentScrapeMode, speed: currentSpeed, extract_email, resume })
+                    body: JSON.stringify({ 
+                        target, 
+                        limit, 
+                        scrape_type: currentScrapeMode, 
+                        speed: currentSpeed, 
+                        extract_email, 
+                        resume,
+                        batch_mode,
+                        batch_size,
+                        batch_delay_seconds
+                    })
                 });
                 const data = await res.json();
                 if (!data.success) {
@@ -684,13 +752,21 @@
                 const elDbBadge = document.getElementById('db-badge');
                 if (elDbBadge && state.db_type) elDbBadge.textContent = state.db_type.toUpperCase();
 
-                if (state.is_scraping) {
+                if (state.is_in_cooldown) {
+                    statusLight.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+                    statusPill.className = 'text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1.5 shadow-sm shadow-amber-500/20';
+                    statusText.textContent = state.status_text || 'Sedang jeda istirahat antar batch...';
+                    document.getElementById('btn-start').disabled = true;
+                    document.getElementById('btn-stop').disabled = false;
+                } else if (state.is_scraping) {
                     statusLight.className = 'w-2 h-2 rounded-full bg-pink-400 animate-ping';
+                    statusPill.className = 'text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center space-x-1.5';
                     statusText.textContent = state.status_text || 'Sedang mengambil data...';
                     document.getElementById('btn-start').disabled = true;
                     document.getElementById('btn-stop').disabled = false;
                 } else {
                     statusLight.className = 'w-2 h-2 rounded-full bg-slate-500';
+                    statusPill.className = 'text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center space-x-1.5';
                     statusText.textContent = state.status_text || 'Selesai / Idle';
                     document.getElementById('btn-start').disabled = false;
                     document.getElementById('btn-stop').disabled = true;

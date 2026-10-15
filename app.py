@@ -38,7 +38,13 @@ scraping_state = {
     "results": [],
     "emails_found_count": 0,
     "db_saved_count": 0,
-    "db_type": db_manager.DB_TYPE
+    "db_type": db_manager.DB_TYPE,
+    "batch_mode": False,
+    "batch_size": 50,
+    "batch_delay_seconds": 180,
+    "current_batch": 1,
+    "is_in_cooldown": False,
+    "cooldown_remaining": 0
 }
 
 email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b')
@@ -194,7 +200,7 @@ def process_batch_details(user_batch, http_session, target_username, scrape_type
         add_log(f"[!] Error simpan database: {dbe}")
 
 
-def run_scraper(target_username, scrape_limit, session_id, scrape_type="followers", speed="fast", extract_email=True, resume_mode=True):
+def run_scraper(target_username, scrape_limit, session_id, scrape_type="followers", speed="fast", extract_email=True, resume_mode=True, batch_mode=False, batch_size=50, batch_delay_seconds=180):
     global stop_event
     is_following = (scrape_type == "following")
     type_label = "following" if is_following else "pengikut (followers)"
@@ -219,11 +225,18 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
         scraping_state["results"] = []
         scraping_state["emails_found_count"] = 0
         scraping_state["db_saved_count"] = 0
+        scraping_state["batch_mode"] = batch_mode
+        scraping_state["batch_size"] = batch_size
+        scraping_state["batch_delay_seconds"] = batch_delay_seconds
+        scraping_state["current_batch"] = 1
+        scraping_state["is_in_cooldown"] = False
+        scraping_state["cooldown_remaining"] = 0
         scraping_state["status_text"] = f"Mempersiapkan koneksi..."
 
     speed_names = {"fast": "Cepat (1.0 - 1.5s)", "normal": "Normal (2.0 - 3.0s)", "safe": "Aman (4.0 - 5.0s)"}
     resume_note = " (Lanjutkan bertahap)" if resume_mode else " (Mulai dari awal)"
-    add_log(f"Memulai scraping {type_label} untuk @{target_username} (Target: {scrape_limit if scrape_limit > 0 else 'Semua'}{resume_note}, Mode: {speed_names.get(speed, speed)})...")
+    batch_note = f" [Auto-Batch: {batch_size} akun/batch, Jeda: {batch_delay_seconds}s]" if batch_mode else ""
+    add_log(f"Memulai scraping {type_label} untuk @{target_username} (Target: {scrape_limit if scrape_limit > 0 else 'Semua'}{resume_note}{batch_note}, Mode: {speed_names.get(speed, speed)})...")
 
     http_session = requests.Session()
     adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
@@ -286,6 +299,8 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
 
         page_num = 1
         has_more = True
+        batch_num = 1
+        current_batch_scraped = 0
 
         while has_more and len(users) < limit and not stop_event.is_set():
             if page_num > 1:
@@ -341,6 +356,7 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
                         break
 
             if new_in_batch_users:
+                current_batch_scraped += len(new_in_batch_users)
                 with state_lock:
                     scraping_state["status_text"] = f"Mengekstrak followers, following & email (Halaman {page_num})..."
                 process_batch_details(new_in_batch_users, http_session, target_username, scrape_type, extract_email)
@@ -383,6 +399,38 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
             if len(users) >= limit:
                 break
 
+            # Auto-Batch Cooldown (Model 1: Anti-Banned)
+            if batch_mode and current_batch_scraped >= batch_size and len(users) < limit and has_more and not stop_event.is_set():
+                mins, secs = divmod(batch_delay_seconds, 60)
+                duration_str = f"{mins} menit" if secs == 0 else (f"{secs} detik" if mins == 0 else f"{mins}m {secs}s")
+                add_log(f"[☕] Batch {batch_num} selesai ({current_batch_scraped} akun baru). Istirahat cooldown {duration_str} (Anti-Banned) agar aman dari Meta...")
+
+                with state_lock:
+                    scraping_state["is_in_cooldown"] = True
+                    scraping_state["current_batch"] = batch_num
+
+                end_cooldown = time.time() + batch_delay_seconds
+                while time.time() < end_cooldown and not stop_event.is_set():
+                    rem = max(0, int(end_cooldown - time.time()))
+                    m, s = divmod(rem, 60)
+                    with state_lock:
+                        scraping_state["cooldown_remaining"] = rem
+                        scraping_state["status_text"] = f"☕ Cooldown Batch {batch_num} ({len(users)}/{scrape_limit if scrape_limit > 0 else 'Semua'}): istirahat {m:02d}:{s:02d}..."
+                    time.sleep(1)
+
+                with state_lock:
+                    scraping_state["is_in_cooldown"] = False
+                    scraping_state["cooldown_remaining"] = 0
+
+                if stop_event.is_set():
+                    break
+
+                batch_num += 1
+                current_batch_scraped = 0
+                with state_lock:
+                    scraping_state["current_batch"] = batch_num
+                add_log(f"[🚀] Cooldown selesai! Melanjutkan ke Batch {batch_num} (Total terkumpul: {len(users)} akun)...")
+
             page_num += 1
 
         # Save to disk JSON file
@@ -391,6 +439,8 @@ def run_scraper(target_username, scrape_limit, session_id, scrape_type="follower
 
         with state_lock:
             scraping_state["is_scraping"] = False
+            scraping_state["is_in_cooldown"] = False
+            scraping_state["cooldown_remaining"] = 0
             scraping_state["progress_pct"] = 100
             email_info = f" ({scraping_state['emails_found_count']} email publik)" if extract_email else ""
             db_info = f", {scraping_state['db_saved_count']} disimpan ke DB"
@@ -516,14 +566,27 @@ def start_scrape():
     if speed not in ["fast", "normal", "safe"]:
         speed = "fast"
 
+    batch_mode = bool(data.get("batch_mode", False))
+    batch_size = int(data.get("batch_size", 50))
+    if batch_size < 10:
+        batch_size = 10
+    batch_delay_seconds = int(data.get("batch_delay_seconds", 180))
+    if batch_delay_seconds < 5:
+        batch_delay_seconds = 5
+
     stop_event.clear()
-    scrape_thread = threading.Thread(target=run_scraper, args=(target, limit, active_session_id, scrape_type, speed, extract_email, resume_mode), daemon=True)
+    scrape_thread = threading.Thread(
+        target=run_scraper, 
+        args=(target, limit, active_session_id, scrape_type, speed, extract_email, resume_mode, batch_mode, batch_size, batch_delay_seconds), 
+        daemon=True
+    )
     scrape_thread.start()
 
     type_name = "following" if scrape_type == "following" else "followers"
     email_note = " (ekstrak email & profil aktif)" if extract_email else ""
     resume_note = " [Mode Bertahap/Resume]" if resume_mode else " [Mulai dari awal]"
-    return jsonify({"success": True, "message": f"Mulai scraping {type_name} untuk @{target}{email_note}{resume_note}"})
+    batch_note = f" [Auto-Batch: {batch_size}/kloter, jeda {batch_delay_seconds}s]" if batch_mode else ""
+    return jsonify({"success": True, "message": f"Mulai scraping {type_name} untuk @{target}{email_note}{resume_note}{batch_note}"})
 
 
 @app.route("/api/scrape/stop", methods=["POST"])
