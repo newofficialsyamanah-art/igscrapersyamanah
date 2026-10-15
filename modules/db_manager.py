@@ -311,7 +311,7 @@ def get_all_for_export(target_source=None, scrape_type=None):
             params.append(scrape_type)
         if conds:
             query += " WHERE " + " AND ".join(conds)
-        query += " ORDER BY id ASC"
+        query += " ORDER BY (CASE WHEN follower_count > 0 THEN 0 ELSE 1 END), id ASC"
         
         cur.execute(query, tuple(params))
         rows = cur.fetchall()
