@@ -429,7 +429,17 @@ def get_status():
 @app.route("/api/sessions", methods=["GET"])
 def get_sessions():
     sessions = Sessions_Manager.load_sessions()
-    session_list = [{"username": s[0], "session_id": s[1]} for s in sessions]
+    session_list = []
+    for s in sessions:
+        uname = s[0]
+        sid = s[1]
+        is_valid, msg = Sessions_Manager.verify_session(uname, sid)
+        session_list.append({
+            "username": uname,
+            "session_id": sid,
+            "is_valid": is_valid,
+            "message": msg
+        })
     return jsonify({"sessions": session_list})
 
 
@@ -494,7 +504,13 @@ def start_scrape():
     if not sessions:
         return jsonify({"success": False, "message": "Belum ada sesi tersimpan. Silakan tambahkan session ID terlebih dahulu!"}), 400
 
-    active_session_id = sessions[0][1]
+    active_user, active_session_id = sessions[0]
+    is_valid, v_msg = Sessions_Manager.verify_session(active_user, active_session_id)
+    if not is_valid:
+        return jsonify({
+            "success": False, 
+            "message": f"Sesi Instagram @{active_user} sudah kedaluwarsa atau logout ({v_msg}). Silakan klik tombol 'Akun Sesi' di kanan atas dan masukkan sessionid yang masih aktif!"
+        }), 400
 
     speed = data.get("speed", "fast").strip().lower()
     if speed not in ["fast", "normal", "safe"]:

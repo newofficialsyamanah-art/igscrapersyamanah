@@ -479,19 +479,29 @@
 
                 if (data.sessions && data.sessions.length > 0) {
                     const active = data.sessions[0];
-                    dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
-                    userLabel.textContent = `@${active.username}`;
+                    if (active.is_valid === false) {
+                        dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+                        userLabel.textContent = `@${active.username} (Sesi Habis)`;
+                        userLabel.className = 'text-red-400 font-semibold truncate max-w-[150px] text-xs';
+                    } else {
+                        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                        userLabel.textContent = `@${active.username}`;
+                        userLabel.className = 'text-slate-300 font-medium truncate max-w-[120px] text-xs';
+                    }
 
                     data.sessions.forEach((s, idx) => {
                         const item = document.createElement('div');
                         item.className = 'flex items-center justify-between p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs';
+                        const statusDot = s.is_valid === false ? 'bg-red-500 animate-pulse' : 'bg-emerald-400';
+                        const statusBadge = s.is_valid === false ? '<span class="text-[10px] text-red-400 font-semibold">(Sesi Habis / Logout)</span>' : '<span class="text-[10px] text-emerald-400 font-medium">(Aktif)</span>';
                         item.innerHTML = `
                             <div class="flex items-center space-x-2 truncate">
-                                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                <span class="w-2 h-2 rounded-full ${statusDot}"></span>
                                 <span class="font-semibold text-white">@${s.username}</span>
+                                ${statusBadge}
                                 <span class="text-slate-500 text-[11px] truncate font-mono">${s.session_id.substring(0, 15)}...</span>
                             </div>
-                            <button onclick="deleteSession(${idx})" class="text-red-400 hover:text-red-300 p-1">
+                            <button onclick="deleteSession(${idx})" class="text-red-400 hover:text-red-300 p-1" title="Hapus sesi">
                                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             </button>
                         `;
@@ -616,6 +626,9 @@
                     alert('Gagal memulai: ' + (data.message || 'Error tidak diketahui'));
                     document.getElementById('btn-start').disabled = false;
                     document.getElementById('btn-stop').disabled = true;
+                    if (data.message && (data.message.includes('Sesi Instagram') || data.message.includes('kedaluwarsa') || data.message.includes('sessionid'))) {
+                        openSessionModal();
+                    }
                     return;
                 }
 

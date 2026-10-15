@@ -282,7 +282,8 @@ def get_recent_users(limit=200, target_source=None, scrape_type=None):
             params.append(str(scrape_type).strip().lower())
 
         where_clause = (" WHERE " + " AND ".join(conds)) if conds else ""
-        query = f"SELECT username, full_name, category_type, follower_count_str, following_count_str, email, is_private, is_verified, target_source, scrape_type, scraped_at FROM scraped_users{where_clause} ORDER BY id DESC LIMIT %s" if DB_TYPE == "postgresql" else f"SELECT username, full_name, category_type, follower_count_str, following_count_str, email, is_private, is_verified, target_source, scrape_type, scraped_at FROM scraped_users{where_clause} ORDER BY id DESC LIMIT ?"
+        order_clause = " ORDER BY (CASE WHEN follower_count > 0 THEN 0 ELSE 1 END), id DESC"
+        query = f"SELECT username, full_name, category_type, follower_count_str, following_count_str, email, is_private, is_verified, target_source, scrape_type, scraped_at FROM scraped_users{where_clause}{order_clause} LIMIT %s" if DB_TYPE == "postgresql" else f"SELECT username, full_name, category_type, follower_count_str, following_count_str, email, is_private, is_verified, target_source, scrape_type, scraped_at FROM scraped_users{where_clause}{order_clause} LIMIT ?"
         params.append(limit)
 
         cur.execute(query, tuple(params))

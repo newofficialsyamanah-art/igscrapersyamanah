@@ -36,8 +36,12 @@ def show_banner():
     print(f'{random.choice(colors)}{banner}{Colors.RESET}')
     print(f'{Colors.RED}Session  Manager | Version: 1.0 | Author: Kev {Colors.RESET}\n')
 
-def load_sessions(filename='session_file.txt'):
+DEFAULT_SESSION_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'session_file.txt')
+
+def load_sessions(filename=None):
     """Load sessions from file"""
+    if filename is None:
+        filename = DEFAULT_SESSION_FILE
     sessions = []
     try:
         with open(filename, 'rb') as f:
@@ -50,8 +54,10 @@ def load_sessions(filename='session_file.txt'):
         pass
     return sessions
 
-def save_sessions(sessions, filename='session_file.txt'):
+def save_sessions(sessions, filename=None):
     """Save sessions to file"""
+    if filename is None:
+        filename = DEFAULT_SESSION_FILE
     with open(filename, 'wb') as f:
         for session in sessions:
             pickle.dump(session, f)
